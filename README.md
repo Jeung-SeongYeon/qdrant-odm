@@ -1,56 +1,26 @@
-## Qdrant ODM (v0.2)
+# 📦 Qdrant ODM (v0.2)
 
-`qdrant-odm` is a Qdrant-first ODM focused on:
+`qdrant-odm` is a Qdrant-first ODM designed for building production-grade vector search systems with:
 
 - declarative model schema
-- collection and payload index sync with **schema diff** and dry-run planning
-- typed filter DSL
-- async repository on top of `AsyncQdrantClient`
-- typed search results and hybrid retrieval skeleton (dense + sparse RRF)
-- **batched** `get_many` / `upsert_many` for large workloads
+- explicit payload indexing
+- safe schema synchronization (diff → plan → sync)
+- Python-native filter DSL
+- async repository abstraction
+- hybrid retrieval (dense + sparse with RRF)
+- batch-optimized operations
 
-## Package layout
+---
 
-```text
-qdrant_odm/
-├── __init__.py
-├── client.py
-├── exceptions.py
-├── types.py
-├── model/
-│   ├── base.py
-│   ├── fields.py
-│   ├── metadata.py
-│   ├── serializer.py
-│   └── registry.py
-├── schema/
-│   ├── planner.py
-│   ├── sync.py
-│   ├── diff.py
-│   └── qdrant_schema.py
-├── query/
-│   ├── expressions.py
-│   ├── filters.py
-│   ├── search.py
-│   ├── operators.py
-│   └── compiler.py
-├── repository/
-│   ├── base.py
-│   ├── async_repository.py
-│   └── result.py
-└── utils/
-    ├── typing.py
-    ├── inspect.py
-    └── chunking.py
-```
-
-## Install
+# 🚀 Installation
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Quick start
+---
+
+# 🚀 Quick Start
 
 ```python
 from datetime import datetime
@@ -67,7 +37,6 @@ from qdrant_odm import (
     VectorField,
 )
 
-
 class Document(QdrantModel):
     __collection__ = "documents"
 
@@ -76,73 +45,238 @@ class Document(QdrantModel):
     page: int | None = PayloadField(index="integer")
     category: str = PayloadField(index="keyword")
     created_at: datetime = PayloadField(index="datetime")
-    is_deleted: bool = PayloadField(default=False, index="bool")
 
     dense = VectorField(name="content_dense", size=3072, distance="Cosine")
     sparse = SparseVectorField(name="content_sparse")
 
-
-async def run() -> None:
+async def run():
     client = AsyncQdrantClient(url="http://localhost:6333")
+
     odm = QdrantODM(client)
     await odm.sync_schema(Document)
 
     repo = QdrantRepository[Document](client, Document)
-    document = Document(
+
+    doc = Document(
         id=uuid4(),
-        title="제10조 관리비",
-        page=3,
-        category="law",
+        title="Some Documents",
+        page=1,
+        category="Some Category",
         created_at=datetime.now(),
-        is_deleted=False,
     )
 
     await repo.upsert(
-        document,
+        doc,
         vectors={
             "content_dense": [0.1] * 3072,
-            "content_sparse": {"indices": [1, 5], "values": [0.3, 0.8]},
+            "content_sparse": {"indices": [1, 3], "values": [0.4, 0.7]},
         },
     )
-
-    hits = await repo.search(
-        SearchQuery(
-            using="content_dense",
-            vector=[0.2] * 3072,
-            filter=(Document.category == "law") & (Document.page >= 2),
-            limit=10,
-        )
-    )
-
-    for hit in hits:
-        print(hit.score, hit.document.title)
-
-    diff = await odm.schema.diff(Document)
-    print(diff.payload_index_missing)
-
-    plan = await odm.schema.dry_run(Document)
-    print(plan)
-
-    page = await repo.scroll(filter=Document.category == "law", limit=50)
-    print(len(page.items), page.next_offset)
-
-    total = await repo.count(filter=Document.is_deleted == False)
-    print("count", total)
-
-    await repo.set_payload(document.id, {"page": 4})
-    await repo.delete(document.id)
 ```
 
-## v0.2 highlights
+---
 
-| Area | Behavior |
-|------|-----------|
-| Schema | `SchemaManager.diff()` returns `SchemaDiff` (vectors, sparse vectors, payload indexes). `sync()` / `dry_run()` / `plan_sync()` use the same planner; blocking issues raise `SchemaConflictError`. |
-| Repository | `scroll()` returns `ScrollPage[T]` with `next_offset` for pagination. `get_many(..., chunk_size=...)`, `upsert_many(..., batch_size=...)` use `utils.chunking`. `exists()` uses `retrieve` with `with_payload=False`. |
-| Utilities | `chunked()` for splitting ID lists and upsert batches. |
+# 🧠 Core Concepts
 
-## Run tests
+## 1. Model = Payload + Schema (Vectors are separate)
 
-```bash
-pytest -q
+- Pydantic fields → payload
+- VectorField → schema only
+- SparseVectorField → schema only
+
+Vectors are **not stored in the model instance**
+
+```python
+await repo.upsert(model, vectors={...})
 ```
+
+---
+
+## 2. Payload fields vs Indexed fields
+
+```python
+title: str                     # stored, NOT indexed
+title: PayloadField(index="keyword")  # stored + indexed
+```
+
+| Type | Stored | Indexed | Filter | Performance |
+|------|--------|---------|--------|------------|
+| Normal field | ✅ | ❌ | ✅ | ❌ slow |
+| PayloadField | ✅ | ✅ | ✅ | ✅ fast |
+
+---
+
+## 3. Filter DSL
+
+```python
+(Document.category == "law") & (Document.page >= 2)
+```
+
+Supported:
+
+- `== != > >= < <=`
+- `.in_()`
+- `.not_in()`
+- `.is_null()`
+- `.is_not_null()`
+- `& | ~`
+
+---
+
+## 4. Repository
+
+```python
+repo = QdrantRepository(client, Document)
+```
+
+### CRUD
+
+```python
+await repo.get(id)
+await repo.get_many(ids)
+await repo.delete(id)
+await repo.exists(id)
+```
+
+---
+
+### Upsert
+
+```python
+await repo.upsert(model, vectors={...})
+```
+
+Batch:
+
+```python
+await repo.upsert_many([
+    (model1, vectors1),
+    (model2, vectors2),
+])
+```
+
+---
+
+### Scroll
+
+```python
+page = await repo.scroll(limit=100)
+page.items
+page.next_offset
+```
+
+---
+
+### Count
+
+```python
+await repo.count(filter=...)
+```
+
+---
+
+## 5. Search
+
+### Dense
+
+```python
+await repo.search(SearchQuery(...))
+```
+
+### Sparse
+
+```python
+SparseVectorInput(indices=[...], values=[...])
+```
+
+### Hybrid (RRF)
+
+```python
+await repo.search_hybrid(HybridSearchQuery(...))
+```
+
+---
+
+## 6. Schema Sync
+
+### Diff
+
+```python
+diff = await odm.schema.diff(Model)
+```
+
+### Dry Run
+
+```python
+plan = await odm.schema.dry_run(Model)
+```
+
+### Sync
+
+```python
+await odm.sync_schema(Model)
+```
+
+---
+
+# ⚠️ Important Behaviors
+
+## Undeclared payload
+
+- upsert → ONLY model fields
+- set_payload → ANY payload allowed
+
+## Index is NOT automatic
+
+Explicit declaration required.
+
+## Schema sync is safe
+
+Will NOT auto-fix:
+
+- vector mismatch
+- index type mismatch
+
+## Filter ignores index
+
+Allowed but slow.
+
+## Hybrid search is not native
+
+Uses:
+
+- dense search
+- sparse search
+- RRF merge
+
+---
+
+# ⚡ Advanced Usage
+
+## Custom batching
+
+```python
+await repo.get_many(ids, chunk_size=256)
+await repo.upsert_many(items, batch_size=200)
+```
+
+## Scroll loop
+
+```python
+offset = None
+while True:
+    page = await repo.scroll(offset=offset)
+    if not page.items:
+        break
+    offset = page.next_offset
+```
+
+---
+
+# 🔥 Summary
+
+- Qdrant-first ODM
+- strict schema + flexible payload patch
+- explicit indexing model
+- Python DSL queries
+- production-ready async design
