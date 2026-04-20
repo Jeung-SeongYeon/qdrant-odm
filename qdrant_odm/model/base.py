@@ -5,9 +5,17 @@ from pydantic import BaseModel, ConfigDict
 
 from qdrant_odm.exceptions import ModelDefinitionError
 from qdrant_odm.model.fields import (
+    BoolIndexOptions,
+    DatetimeIndexOptions,
+    FloatIndexOptions,
+    GeoIndexOptions,
+    IntegerIndexOptions,
+    KeywordIndexOptions,
     PayloadFieldInfo,
     SparseVectorField,
     SparseVectorFieldInfo,
+    TextIndexOptions,
+    UuidIndexOptions,
     VectorField,
     VectorFieldInfo,
 )
@@ -51,6 +59,7 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
     Requirements for every concrete model:
     - `__collection__` must be defined
     - the configured id field must exist
+    - the id field must be `UUID` or `int`
     - at least one dense `VectorField` must be declared
     - sparse vector fields are optional
 
@@ -130,6 +139,8 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
                 payload_fields[field_name] = payload_meta
                 continue
             payload_fields[field_name] = PayloadFieldInfo()
+
+        _validate_payload_index_options(cls, payload_fields)
 
         vector_fields: dict[str, VectorFieldInfo] = {}
         sparse_vector_fields: dict[str, SparseVectorFieldInfo] = {}
@@ -216,3 +227,53 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         data = dict(source_payload)
         data[cls.__odm_meta__.id_field] = point_id
         return cls.model_validate(data)
+
+
+def _validate_payload_index_options(
+    model_cls: type[QdrantModel],
+    payload_fields: dict[str, PayloadFieldInfo],
+) -> None:
+    """
+    Validate that only the option object matching the declared `index`
+    is provided for each payload field.
+    """
+    option_map: dict[str, tuple[str, type[Any]]] = {
+        "keyword": ("keyword", KeywordIndexOptions),
+        "integer": ("integer", IntegerIndexOptions),
+        "float": ("float_", FloatIndexOptions),
+        "bool": ("bool_", BoolIndexOptions),
+        "geo": ("geo", GeoIndexOptions),
+        "datetime": ("datetime", DatetimeIndexOptions),
+        "text": ("text", TextIndexOptions),
+        "uuid": ("uuid", UuidIndexOptions),
+    }
+
+    option_attr_names = tuple(attr for attr, _ in option_map.values())
+
+    for field_name, payload_info in payload_fields.items():
+        if payload_info.index is None:
+            for attr_name in option_attr_names:
+                if getattr(payload_info, attr_name) is not None:
+                    raise ModelDefinitionError(
+                        f"{model_cls.__name__}.{field_name} defines payload index options "
+                        f"but has no `index=` declared"
+                    )
+            continue
+
+        if payload_info.index not in option_map:
+            raise ModelDefinitionError(
+                f"{model_cls.__name__}.{field_name} uses unsupported payload index "
+                f"type {payload_info.index!r}"
+            )
+
+        expected_attr_name, _ = option_map[payload_info.index]
+
+        for attr_name in option_attr_names:
+            value = getattr(payload_info, attr_name)
+            if value is None:
+                continue
+            if attr_name != expected_attr_name:
+                raise ModelDefinitionError(
+                    f"{model_cls.__name__}.{field_name} uses index={payload_info.index!r} "
+                    f"but provided incompatible option set {attr_name!r}"
+                )

@@ -1,7 +1,116 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
+from qdrant_client.http import models
+
+PayloadSchemaLiteral = Literal[
+    "keyword",
+    "integer",
+    "float",
+    "bool",
+    "geo",
+    "datetime",
+    "text",
+    "uuid",
+]
+
+TokenizerLiteral = Literal["word", "whitespace", "prefix", "multilingual"]
+
+
+@dataclass(slots=True)
+class KeywordIndexOptions:
+    """
+    Extra options for a keyword payload index.
+    """
+
+    is_tenant: bool | None = None
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class IntegerIndexOptions:
+    """
+    Extra options for an integer payload index.
+    """
+
+    lookup: bool | None = None
+    range: bool | None = None
+    is_principal: bool | None = None
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class FloatIndexOptions:
+    """
+    Extra options for a float payload index.
+    """
+
+    is_principal: bool | None = None
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class BoolIndexOptions:
+    """
+    Extra options for a bool payload index.
+    """
+
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class GeoIndexOptions:
+    """
+    Extra options for a geo payload index.
+    """
+
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class DatetimeIndexOptions:
+    """
+    Extra options for a datetime payload index.
+    """
+
+    is_principal: bool | None = None
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class TextIndexOptions:
+    """
+    Extra options for a text payload index.
+    """
+
+    tokenizer: TokenizerLiteral | None = None
+    min_token_len: int | None = None
+    max_token_len: int | None = None
+    lowercase: bool | None = None
+    ascii_folding: bool | None = None
+    phrase_matching: bool | None = None
+    stopwords: Any | None = None
+    on_disk: bool | None = None
+    stemmer: models.SnowballParams | None = None
+    enable_hnsw: bool | None = None
+
+
+@dataclass(slots=True)
+class UuidIndexOptions:
+    """
+    Extra options for a UUID payload index.
+    """
+
+    is_tenant: bool | None = None
+    on_disk: bool | None = None
+    enable_hnsw: bool | None = None
 
 
 @dataclass(slots=True)
@@ -16,8 +125,17 @@ class PayloadFieldInfo:
             Optional alternate payload key name used during serialization.
     """
 
-    index: str | None = None
+    index: PayloadSchemaLiteral | None = None
     alias: str | None = None
+
+    keyword: KeywordIndexOptions | None = None
+    integer: IntegerIndexOptions | None = None
+    float_: FloatIndexOptions | None = None
+    bool_: BoolIndexOptions | None = None
+    geo: GeoIndexOptions | None = None
+    datetime: DatetimeIndexOptions | None = None
+    text: TextIndexOptions | None = None
+    uuid: UuidIndexOptions | None = None
 
 
 @dataclass(slots=True)
@@ -58,27 +176,33 @@ class SparseVectorFieldInfo:
 def PayloadField(
     default: Any = ...,
     *,
-    index: str | None = None,
+    index: PayloadSchemaLiteral | None = None,
     alias: str | None = None,
+    keyword: KeywordIndexOptions | None = None,
+    integer: IntegerIndexOptions | None = None,
+    float_: FloatIndexOptions | None = None,
+    bool_: BoolIndexOptions | None = None,
+    geo: GeoIndexOptions | None = None,
+    datetime: DatetimeIndexOptions | None = None,
+    text: TextIndexOptions | None = None,
+    uuid: UuidIndexOptions | None = None,
 ):
     """
-    Declare a payload field with optional ODM-specific metadata.
-
-    This helper wraps `pydantic.Field(...)` and stores Qdrant ODM metadata
-    inside `json_schema_extra["qdrant_payload"]`.
-
-    Args:
-        default:
-            Default field value passed to Pydantic.
-        index:
-            Optional payload index type hint for schema generation.
-        alias:
-            Optional alias used by Pydantic serialization and validation.
-
-    Returns:
-        A configured Pydantic field object.
+    Declare a payload field with optional ODM-specific metadata and
+    payload-index configuration.
     """
-    payload_info = PayloadFieldInfo(index=index, alias=alias)
+    payload_info = PayloadFieldInfo(
+        index=index,
+        alias=alias,
+        keyword=keyword,
+        integer=integer,
+        float_=float_,
+        bool_=bool_,
+        geo=geo,
+        datetime=datetime,
+        text=text,
+        uuid=uuid,
+    )
     json_schema_extra = {"qdrant_payload": payload_info}
     return Field(default=default, alias=alias, json_schema_extra=json_schema_extra)
 

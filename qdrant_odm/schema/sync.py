@@ -3,9 +3,9 @@ from qdrant_client.http import models
 
 from qdrant_odm.exceptions import SchemaConflictError
 from qdrant_odm.model.base import QdrantModel
-from qdrant_odm.schema.qdrant_schema import INDEX_TYPES
 from qdrant_odm.schema.diff import SchemaDiff, compute_schema_diff
 from qdrant_odm.schema.planner import SchemaOperation, build_sync_operations
+from qdrant_odm.schema.qdrant_schema import build_payload_index_schema
 
 
 class SchemaManager:
@@ -109,13 +109,11 @@ class SchemaManager:
             if operation.operation == "create_payload_index":
                 field_name = operation.detail
                 payload_info = model.schema_definition().payload_fields[field_name]
-                index_type = INDEX_TYPES.get(payload_info.index or "")
-                if index_type is None:
-                    raise SchemaConflictError(f"Unsupported index type: {payload_info.index!r}")
+                field_schema = build_payload_index_schema(payload_info)
                 await self.client.create_payload_index(
                     collection_name=model.collection_name(),
                     field_name=field_name,
-                    field_schema=index_type,
+                    field_schema=field_schema,
                 )
 
     def _raise_if_blocking(self, schema_diff: SchemaDiff) -> None:
@@ -149,6 +147,8 @@ class SchemaManager:
             )
         if schema_diff.payload_index_type_mismatches:
             raise SchemaConflictError("; ".join(schema_diff.payload_index_type_mismatches))
+        if schema_diff.payload_index_option_mismatches:
+            raise SchemaConflictError("; ".join(schema_diff.payload_index_option_mismatches))
 
     def _build_vectors_config(self, model: type[QdrantModel]) -> dict[str, models.VectorParams]:
         """
