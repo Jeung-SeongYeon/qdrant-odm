@@ -1,20 +1,17 @@
-from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
 from qdrant_odm.exceptions import ModelDefinitionError
-from qdrant_odm.fields import PayloadFieldInfo, SparseVectorField, SparseVectorFieldInfo, VectorField, VectorFieldInfo
-from qdrant_odm.query import FieldExpr
-
-
-@dataclass(slots=True)
-class ModelMetadata:
-    collection_name: str
-    id_field: str
-    payload_fields: dict[str, PayloadFieldInfo] = field(default_factory=dict)
-    vector_fields: dict[str, VectorFieldInfo] = field(default_factory=dict)
-    sparse_vector_fields: dict[str, SparseVectorFieldInfo] = field(default_factory=dict)
+from qdrant_odm.model.fields import (
+    PayloadFieldInfo,
+    SparseVectorField,
+    SparseVectorFieldInfo,
+    VectorField,
+    VectorFieldInfo,
+)
+from qdrant_odm.model.metadata import ModelMetadata
+from qdrant_odm.query.expressions import FieldExpr
 
 
 class QdrantModelMeta(type(BaseModel)):

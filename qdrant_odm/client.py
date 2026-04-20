@@ -1,7 +1,7 @@
 from qdrant_client import AsyncQdrantClient
 
-from qdrant_odm.model import QdrantModel
-from qdrant_odm.schema import SchemaManager
+from qdrant_odm.model.base import QdrantModel
+from qdrant_odm.schema.sync import SchemaManager
 
 
 class QdrantODM:

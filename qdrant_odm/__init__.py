@@ -8,19 +8,65 @@ from qdrant_odm.exceptions import (
     SchemaConflictError,
     SerializationError,
 )
-from qdrant_odm.fields import PayloadField, SparseVectorField, VectorField
-from qdrant_odm.model import QdrantModel
-from qdrant_odm.query import FilterCompiler, HybridSearchQuery, SearchQuery, SparseVectorInput
-from qdrant_odm.repository import QdrantRepository
-from qdrant_odm.result import SearchHit
-from qdrant_odm.schema import SchemaManager, SchemaOperation
+from qdrant_odm.model import (
+    ModelMetadata,
+    PayloadField,
+    PayloadFieldInfo,
+    QdrantModel,
+    SparseVectorField,
+    SparseVectorFieldInfo,
+    VectorField,
+    VectorFieldInfo,
+    clear_registry,
+    get_model,
+    model_from_point,
+    model_to_payload,
+    register_model,
+)
+from qdrant_odm.query import (
+    ComparisonExpr,
+    Expr,
+    FieldExpr,
+    FilterCompiler,
+    FilterExpression,
+    HybridSearchQuery,
+    LogicalExpr,
+    NotExpr,
+    SearchQuery,
+    SparseVectorInput,
+)
+from qdrant_odm.repository import (
+    DEFAULT_RETRIEVE_CHUNK_SIZE,
+    DEFAULT_UPSERT_BATCH_SIZE,
+    QdrantRepository,
+    SearchHit,
+)
+from qdrant_odm.schema import (
+    SchemaDiff,
+    SchemaManager,
+    SchemaOperation,
+    build_sync_operations,
+    compute_schema_diff,
+)
+from qdrant_odm.types import ScrollPage
+from qdrant_odm.utils.chunking import chunked
 
 __all__ = [
+    "ComparisonExpr",
+    "DEFAULT_RETRIEVE_CHUNK_SIZE",
+    "DEFAULT_UPSERT_BATCH_SIZE",
+    "Expr",
+    "FieldExpr",
     "FilterCompiler",
+    "FilterExpression",
     "HybridSearchQuery",
+    "LogicalExpr",
     "ModelDefinitionError",
+    "ModelMetadata",
+    "NotExpr",
     "NotFoundError",
     "PayloadField",
+    "PayloadFieldInfo",
     "QdrantODM",
     "QdrantModel",
     "QdrantODMError",
@@ -28,12 +74,24 @@ __all__ = [
     "QueryCompileError",
     "RepositoryError",
     "SchemaConflictError",
+    "SchemaDiff",
     "SchemaManager",
     "SchemaOperation",
+    "ScrollPage",
     "SearchHit",
     "SearchQuery",
     "SerializationError",
     "SparseVectorField",
+    "SparseVectorFieldInfo",
     "SparseVectorInput",
     "VectorField",
+    "VectorFieldInfo",
+    "build_sync_operations",
+    "chunked",
+    "clear_registry",
+    "compute_schema_diff",
+    "get_model",
+    "model_from_point",
+    "model_to_payload",
+    "register_model",
 ]

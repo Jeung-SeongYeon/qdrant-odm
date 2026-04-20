@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from qdrant_client.http import models
 
 from qdrant_odm import (
     HybridSearchQuery,
@@ -38,6 +39,33 @@ async def test_schema_dry_run_create_collection() -> None:
 
     assert "create_collection" in operation_names
     assert "create_payload_index" in operation_names
+
+
+@pytest.mark.asyncio
+async def test_schema_diff_missing_payload_index() -> None:
+    client = AsyncMock()
+    client.collection_exists.return_value = True
+    client.get_collection.return_value = SimpleNamespace(
+        config=SimpleNamespace(
+            params=SimpleNamespace(
+                vectors={
+                    "content_dense": SimpleNamespace(size=4, distance="Cosine"),
+                },
+                sparse_vectors={"content_sparse": SimpleNamespace()},
+            )
+        ),
+        payload_schema={
+            "title": models.PayloadIndexInfo(data_type=models.PayloadSchemaType.KEYWORD, points=0),
+        },
+    )
+    manager = SchemaManager(client)
+
+    diff = await manager.diff(Document)
+
+    assert diff.collection_exists is True
+    assert "created_at" in diff.payload_index_missing
+    assert not diff.vector_missing
+    assert not diff.sparse_missing
 
 
 @pytest.mark.asyncio
@@ -86,3 +114,35 @@ async def test_repository_get_returns_model() -> None:
     assert result is not None
     assert result.id == point_id
     assert result.title == "X"
+
+
+@pytest.mark.asyncio
+async def test_exists_uses_minimal_payload() -> None:
+    client = AsyncMock()
+    point_id = uuid4()
+    client.retrieve.return_value = [SimpleNamespace(id=point_id)]
+    repository = QdrantRepository(client, Document)
+
+    found = await repository.exists(point_id)
+
+    assert found is True
+    _, kwargs = client.retrieve.call_args
+    assert kwargs["with_payload"] is False
+
+
+@pytest.mark.asyncio
+async def test_upsert_many_chunking() -> None:
+    client = AsyncMock()
+    repository = QdrantRepository(client, Document)
+    vectors = {"content_dense": [0.1, 0.2, 0.3, 0.4], "content_sparse": {"indices": [1], "values": [1.0]}}
+    items = [
+        (
+            Document(id=uuid4(), title=f"t{i}", created_at=datetime(2026, 1, 1)),
+            vectors,
+        )
+        for i in range(5)
+    ]
+
+    await repository.upsert_many(items, batch_size=2)
+
+    assert client.upsert.await_count == 3

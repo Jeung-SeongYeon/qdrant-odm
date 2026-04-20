@@ -3,9 +3,14 @@ from typing import Any, Generic, Sequence, TypeVar
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
-from qdrant_odm.model import QdrantModel
-from qdrant_odm.query import FilterCompiler, HybridSearchQuery, SearchQuery, SparseVectorInput
-from qdrant_odm.result import SearchHit
+from qdrant_odm.model.base import QdrantModel
+from qdrant_odm.query.compiler import FilterCompiler
+from qdrant_odm.query.filters import FilterExpression
+from qdrant_odm.query.search import HybridSearchQuery, SearchQuery, SparseVectorInput
+from qdrant_odm.repository.base import DEFAULT_RETRIEVE_CHUNK_SIZE, DEFAULT_UPSERT_BATCH_SIZE
+from qdrant_odm.repository.result import SearchHit
+from qdrant_odm.types import ScrollPage
+from qdrant_odm.utils.chunking import chunked
 
 T = TypeVar("T", bound=QdrantModel)
 
@@ -28,29 +33,47 @@ class QdrantRepository(Generic[T]):
         record = records[0]
         return self.model.from_point(point_id=record.id, payload=record.payload)
 
-    async def get_many(self, ids: Sequence[str | int]) -> list[T]:
+    async def get_many(
+        self,
+        ids: Sequence[str | int],
+        *,
+        chunk_size: int | None = None,
+    ) -> list[T]:
         if not ids:
             return []
-        records = await self.client.retrieve(
-            collection_name=self.meta.collection_name,
-            ids=list(ids),
-            with_payload=True,
-            with_vectors=False,
-        )
-        return [self.model.from_point(point_id=record.id, payload=record.payload) for record in records]
+        size = chunk_size or DEFAULT_RETRIEVE_CHUNK_SIZE
+        results: list[T] = []
+        for batch in chunked(list(ids), size):
+            records = await self.client.retrieve(
+                collection_name=self.meta.collection_name,
+                ids=batch,
+                with_payload=True,
+                with_vectors=False,
+            )
+            results.extend(
+                self.model.from_point(point_id=record.id, payload=record.payload) for record in records
+            )
+        return results
 
     async def upsert(self, obj: T, *, vectors: dict[str, Any]) -> None:
         point = models.PointStruct(id=obj.model_id(), payload=obj.to_payload(), vector=vectors)
         await self.client.upsert(collection_name=self.meta.collection_name, points=[point])
 
-    async def upsert_many(self, items: Sequence[tuple[T, dict[str, Any]]]) -> None:
+    async def upsert_many(
+        self,
+        items: Sequence[tuple[T, dict[str, Any]]],
+        *,
+        batch_size: int | None = None,
+    ) -> None:
         if not items:
             return
-        points = [
-            models.PointStruct(id=obj.model_id(), payload=obj.to_payload(), vector=vectors)
-            for obj, vectors in items
-        ]
-        await self.client.upsert(collection_name=self.meta.collection_name, points=points)
+        size = batch_size or DEFAULT_UPSERT_BATCH_SIZE
+        for batch in chunked(list(items), size):
+            points = [
+                models.PointStruct(id=obj.model_id(), payload=obj.to_payload(), vector=vectors)
+                for obj, vectors in batch
+            ]
+            await self.client.upsert(collection_name=self.meta.collection_name, points=points)
 
     async def delete(self, point_id: str | int) -> None:
         selector = models.PointIdsList(points=[point_id])
@@ -71,9 +94,15 @@ class QdrantRepository(Generic[T]):
         )
 
     async def exists(self, point_id: str | int) -> bool:
-        return await self.get(point_id) is not None
+        records = await self.client.retrieve(
+            collection_name=self.meta.collection_name,
+            ids=[point_id],
+            with_payload=False,
+            with_vectors=False,
+        )
+        return bool(records)
 
-    async def count(self, filter: Any | None = None) -> int:
+    async def count(self, filter: FilterExpression | None = None) -> int:
         query_filter = FilterCompiler.compile(filter)
         result = await self.client.count(
             collection_name=self.meta.collection_name,
@@ -82,16 +111,25 @@ class QdrantRepository(Generic[T]):
         )
         return int(result.count)
 
-    async def scroll(self, *, filter: Any | None = None, limit: int = 100) -> list[T]:
+    async def scroll(
+        self,
+        *,
+        filter: FilterExpression | None = None,
+        limit: int = 100,
+        offset: Any | None = None,
+        with_vectors: bool = False,
+    ) -> ScrollPage[T]:
         query_filter = FilterCompiler.compile(filter)
-        points, _ = await self.client.scroll(
+        points, next_offset = await self.client.scroll(
             collection_name=self.meta.collection_name,
             scroll_filter=query_filter,
+            offset=offset,
             with_payload=True,
-            with_vectors=False,
+            with_vectors=with_vectors,
             limit=limit,
         )
-        return [self.model.from_point(point_id=point.id, payload=point.payload) for point in points]
+        items = [self.model.from_point(point_id=point.id, payload=point.payload) for point in points]
+        return ScrollPage(items=items, next_offset=next_offset)
 
     async def search(self, query: SearchQuery) -> list[SearchHit[T]]:
         search_result = await self.client.search(
@@ -159,8 +197,8 @@ class QdrantRepository(Generic[T]):
         limit: int,
         k: int,
     ) -> list[SearchHit[T]]:
-        rank_scores: dict[str | int, float] = {}
-        by_id: dict[str | int, SearchHit[T]] = {}
+        rank_scores: dict[Any, float] = {}
+        by_id: dict[Any, SearchHit[T]] = {}
 
         for index, hit in enumerate(dense_hits, start=1):
             rank_scores[hit.id] = rank_scores.get(hit.id, 0.0) + (1.0 / (k + index))

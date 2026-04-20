@@ -1,14 +1,48 @@
-## Qdrant ODM MVP
+## Qdrant ODM (v0.2)
 
 `qdrant-odm` is a Qdrant-first ODM focused on:
 
 - declarative model schema
-- collection/index sync
+- collection and payload index sync with **schema diff** and dry-run planning
 - typed filter DSL
 - async repository on top of `AsyncQdrantClient`
-- typed search results
-- schema dry-run planning
-- hybrid retrieval skeleton (dense + sparse RRF)
+- typed search results and hybrid retrieval skeleton (dense + sparse RRF)
+- **batched** `get_many` / `upsert_many` for large workloads
+
+## Package layout
+
+```text
+qdrant_odm/
+├── __init__.py
+├── client.py
+├── exceptions.py
+├── types.py
+├── model/
+│   ├── base.py
+│   ├── fields.py
+│   ├── metadata.py
+│   ├── serializer.py
+│   └── registry.py
+├── schema/
+│   ├── planner.py
+│   ├── sync.py
+│   ├── diff.py
+│   └── qdrant_schema.py
+├── query/
+│   ├── expressions.py
+│   ├── filters.py
+│   ├── search.py
+│   ├── operators.py
+│   └── compiler.py
+├── repository/
+│   ├── base.py
+│   ├── async_repository.py
+│   └── result.py
+└── utils/
+    ├── typing.py
+    ├── inspect.py
+    └── chunking.py
+```
 
 ## Install
 
@@ -16,7 +50,7 @@
 pip install -e ".[dev]"
 ```
 
-## Quick Start
+## Quick start
 
 ```python
 from datetime import datetime
@@ -83,21 +117,31 @@ async def run() -> None:
     for hit in hits:
         print(hit.score, hit.document.title)
 
+    diff = await odm.schema.diff(Document)
+    print(diff.payload_index_missing)
+
     plan = await odm.schema.dry_run(Document)
     print(plan)
+
+    page = await repo.scroll(filter=Document.category == "law", limit=50)
+    print(len(page.items), page.next_offset)
+
+    total = await repo.count(filter=Document.is_deleted == False)
+    print("count", total)
+
+    await repo.set_payload(document.id, {"page": 4})
+    await repo.delete(document.id)
 ```
 
-## Included MVP Modules
+## v0.2 highlights
 
-- `qdrant_odm/model.py`: `QdrantModel` and metadata collection
-- `qdrant_odm/fields.py`: `PayloadField`, `VectorField`, `SparseVectorField`
-- `qdrant_odm/query.py`: typed filter expression + compiler + `SearchQuery` / `HybridSearchQuery`
-- `qdrant_odm/schema.py`: `SchemaManager.sync` + `plan_sync` + `dry_run`
-- `qdrant_odm/repository.py`: async repository methods + `search_hybrid`
-- `qdrant_odm/result.py`: typed `SearchHit[T]`
-- `qdrant_odm/exceptions.py`: domain exceptions
+| Area | Behavior |
+|------|-----------|
+| Schema | `SchemaManager.diff()` returns `SchemaDiff` (vectors, sparse vectors, payload indexes). `sync()` / `dry_run()` / `plan_sync()` use the same planner; blocking issues raise `SchemaConflictError`. |
+| Repository | `scroll()` returns `ScrollPage[T]` with `next_offset` for pagination. `get_many(..., chunk_size=...)`, `upsert_many(..., batch_size=...)` use `utils.chunking`. `exists()` uses `retrieve` with `with_payload=False`. |
+| Utilities | `chunked()` for splitting ID lists and upsert batches. |
 
-## Run Tests
+## Run tests
 
 ```bash
 pytest -q

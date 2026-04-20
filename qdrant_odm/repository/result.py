@@ -2,7 +2,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
-from qdrant_odm.model import QdrantModel
+from qdrant_odm.model.base import QdrantModel
 
 T = TypeVar("T", bound=QdrantModel)
 

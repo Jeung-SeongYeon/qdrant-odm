@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qdrant-odm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Qdrant-first ODM for typed models and vector search."
 readme = "README.md"
 requires-python = ">=3.11"
