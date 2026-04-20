@@ -1,4 +1,5 @@
-from typing import Any, ClassVar
+from typing import Any, ClassVar, get_args, get_origin, Union
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -47,6 +48,12 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
     """
     Base class for all Qdrant ODM models.
 
+    Requirements for every concrete model:
+    - `__collection__` must be defined
+    - the configured id field must exist
+    - at least one dense `VectorField` must be declared
+    - sparse vector fields are optional
+
     A subclass of `QdrantModel` represents the payload schema of a Qdrant collection
     together with metadata describing:
     - the collection name,
@@ -80,6 +87,7 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             ModelDefinitionError:
                 - if `__collection__` is missing,
                 - if the configured id field does not exist,
+                - if no dense vector field is declared,
                 - if vector names are duplicated.
         """
         super().__pydantic_init_subclass__(**kwargs)
@@ -93,6 +101,24 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         id_field = getattr(cls, "__id_field__", "id")
         if id_field not in cls.model_fields:
             raise ModelDefinitionError(f"{cls.__name__} must define id field {id_field!r}")
+
+        field_info = cls.model_fields[id_field]
+        annotation = field_info.annotation
+
+        def _is_valid_id_type(tp: Any) -> bool:
+            if tp in (int, UUID):
+                return True
+
+            origin = get_origin(tp)
+            if origin is Union:
+                return all(_is_valid_id_type(arg) for arg in get_args(tp))
+
+            return False
+
+        if not _is_valid_id_type(annotation):
+            raise ModelDefinitionError(
+                f"{cls.__name__}.{id_field} must be of type UUID or int (got {annotation!r})"
+            )
 
         payload_fields: dict[str, PayloadFieldInfo] = {}
         for field_name, field_info in cls.model_fields.items():
@@ -117,13 +143,18 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
                     )
                 named_vectors.add(attr_value.info.name)
                 vector_fields[attr_name] = attr_value.info
-            if isinstance(attr_value, SparseVectorField):
+            elif isinstance(attr_value, SparseVectorField):
                 if attr_value.info.name in named_vectors:
                     raise ModelDefinitionError(
                         f"{cls.__name__} has duplicated vector name {attr_value.info.name!r}"
                     )
                 named_vectors.add(attr_value.info.name)
                 sparse_vector_fields[attr_name] = attr_value.info
+
+        if not vector_fields:
+            raise ModelDefinitionError(
+                f"{cls.__name__} must define at least one dense VectorField"
+            )
 
         cls.__odm_meta__ = ModelMetadata(
             collection_name=collection_name,
@@ -151,9 +182,13 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         """
         Return the value of the configured model id field.
 
-        This value is intended to be used as the Qdrant point id.
+        UUID values are converted to strings because Qdrant point ids are passed
+        to the client as string or integer identifiers.
         """
-        return getattr(self, self.__odm_meta__.id_field)
+        value = getattr(self, self.__odm_meta__.id_field)
+        if isinstance(value, UUID):
+            return str(value)
+        return value
 
     def to_payload(self) -> dict[str, Any]:
         """
