@@ -15,7 +15,26 @@ from qdrant_odm.query.expressions import FieldExpr
 
 
 class QdrantModelMeta(type(BaseModel)):
+    """
+    Metaclass for Qdrant ODM models.
+
+    This metaclass enables class-level field access for query DSL expressions.
+    For example, `Document.title == "foo"` can be translated into a `FieldExpr`
+    even though `title` is not defined as a normal class attribute.
+
+    Only payload fields collected in `__odm_meta__` are exposed this way.
+    """
+
     def __getattr__(cls, name: str) -> FieldExpr:
+        """
+        Return a query field expression for a payload field name.
+
+        This is used to support class-based query syntax such as:
+            Document.category == "law"
+
+        Raises:
+            AttributeError: If the attribute is not a known payload field.
+        """
         if name.startswith("__"):
             raise AttributeError(f"{cls.__name__!s} has no attribute {name!r}")
         odm_meta = cls.__dict__.get("__odm_meta__")
@@ -25,6 +44,21 @@ class QdrantModelMeta(type(BaseModel)):
 
 
 class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
+    """
+    Base class for all Qdrant ODM models.
+
+    A subclass of `QdrantModel` represents the payload schema of a Qdrant collection
+    together with metadata describing:
+    - the collection name,
+    - the id field,
+    - payload field options,
+    - dense vector definitions,
+    - sparse vector definitions.
+
+    During subclass initialization, ODM metadata is collected automatically and stored
+    in `__odm_meta__`.
+    """
+
     __collection__: ClassVar[str]
     __id_field__: ClassVar[str] = "id"
     __odm_meta__: ClassVar[ModelMetadata]
@@ -32,6 +66,22 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        """
+        Build ODM metadata when a concrete model subclass is declared.
+
+        This hook validates required model settings and collects:
+        - collection name,
+        - id field,
+        - payload field metadata,
+        - dense vector field metadata,
+        - sparse vector field metadata.
+
+        Raises:
+            ModelDefinitionError:
+                - if `__collection__` is missing,
+                - if the configured id field does not exist,
+                - if vector names are duplicated.
+        """
         super().__pydantic_init_subclass__(**kwargs)
         if cls.__name__ == "QdrantModel":
             return
@@ -85,21 +135,48 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
 
     @classmethod
     def collection_name(cls) -> str:
+        """
+        Return the Qdrant collection name associated with this model.
+        """
         return cls.__odm_meta__.collection_name
 
     @classmethod
     def schema_definition(cls) -> ModelMetadata:
+        """
+        Return the collected ODM metadata for this model.
+        """
         return cls.__odm_meta__
 
     def model_id(self) -> Any:
+        """
+        Return the value of the configured model id field.
+
+        This value is intended to be used as the Qdrant point id.
+        """
         return getattr(self, self.__odm_meta__.id_field)
 
     def to_payload(self) -> dict[str, Any]:
+        """
+        Serialize the model into a Qdrant payload dictionary.
+
+        The configured id field is excluded because the point id is stored separately
+        from the payload in Qdrant.
+        """
         exclude = {self.__odm_meta__.id_field}
         return self.model_dump(mode="python", by_alias=True, exclude=exclude)
 
     @classmethod
     def from_point(cls, *, point_id: Any, payload: dict[str, Any] | None) -> "QdrantModel":
+        """
+        Reconstruct a model instance from a Qdrant point id and payload.
+
+        Args:
+            point_id: The Qdrant point id.
+            payload: The Qdrant payload dictionary. If None, an empty payload is used.
+
+        Returns:
+            A validated model instance with the point id injected into the configured id field.
+        """
         source_payload = payload or {}
         data = dict(source_payload)
         data[cls.__odm_meta__.id_field] = point_id

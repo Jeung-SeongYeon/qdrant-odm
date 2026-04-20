@@ -13,7 +13,17 @@ from qdrant_odm.schema.qdrant_schema import (
 
 @dataclass(slots=True)
 class SchemaDiff:
-    """Structured comparison between a model definition and a live collection."""
+    """
+    Structured comparison between a model definition and a live Qdrant collection.
+
+    This object captures the differences detected during schema inspection, including:
+    - whether the collection exists,
+    - missing or mismatched dense vectors,
+    - missing sparse vectors,
+    - missing payload indexes,
+    - payload index type mismatches,
+    - extra vector names present only in the live collection.
+    """
 
     collection_exists: bool
     vector_missing: list[str] = field(default_factory=list)
@@ -25,6 +35,18 @@ class SchemaDiff:
     extra_sparse_vector_names_in_collection: list[str] = field(default_factory=list)
 
     def has_blocking_issues(self) -> bool:
+        """
+        Return whether the diff contains blocking issues that prevent automatic sync.
+
+        Blocking issues include:
+        - missing dense vectors,
+        - mismatched dense vector definitions,
+        - missing sparse vectors,
+        - payload index type mismatches.
+
+        Returns:
+            True if the diff contains blocking issues, otherwise False.
+        """
         return bool(
             self.vector_missing
             or self.vector_mismatches
@@ -34,6 +56,27 @@ class SchemaDiff:
 
 
 async def compute_schema_diff(client: AsyncQdrantClient, model: type[QdrantModel]) -> SchemaDiff:
+    """
+    Compare a model schema definition against the live Qdrant collection state.
+
+    If the collection does not exist, the diff reports the collection as missing and
+    includes all declared indexed payload fields as missing payload indexes.
+
+    If the collection exists, this function compares:
+    - dense named vectors,
+    - sparse named vectors,
+    - payload index definitions.
+
+    Args:
+        client:
+            The asynchronous Qdrant client instance.
+        model:
+            The ODM model class to compare.
+
+    Returns:
+        A structured schema diff describing the gap between the desired model schema
+        and the live collection configuration.
+    """
     meta = model.schema_definition()
     exists = await client.collection_exists(meta.collection_name)
     if not exists:

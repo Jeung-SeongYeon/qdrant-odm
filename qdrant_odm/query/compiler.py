@@ -5,14 +5,51 @@ from qdrant_odm.query.expressions import ComparisonExpr, Expr, LogicalExpr, NotE
 
 
 class FilterCompiler:
+    """
+    Compile query expression objects into Qdrant filter models.
+
+    This compiler transforms the internal expression tree used by the ODM query DSL
+    into `qdrant_client.http.models.Filter` instances that can be sent directly to Qdrant.
+
+    Supported expression categories include:
+    - logical expressions (`and`, `or`)
+    - negation (`not`)
+    - comparison expressions (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `not_in`)
+    - null checks (`is_null`, `is_not_null`)
+    """
+
     @classmethod
     def compile(cls, expr: Expr | None) -> models.Filter | None:
+        """
+        Compile an optional expression into a Qdrant filter.
+
+        Args:
+            expr:
+                The root expression to compile. If None, no filter is produced.
+
+        Returns:
+            A Qdrant filter object, or None when no expression is provided.
+        """
         if expr is None:
             return None
         return cls._compile_expr(expr)
 
     @classmethod
     def _compile_expr(cls, expr: Expr) -> models.Filter:
+        """
+        Compile a single expression node recursively.
+
+        Args:
+            expr:
+                The expression node to compile.
+
+        Returns:
+            A Qdrant filter representing the given expression subtree.
+
+        Raises:
+            QueryCompileError:
+                If the expression type or operator is not supported.
+        """
         if isinstance(expr, LogicalExpr):
             compiled_values = [cls._compile_expr(value) for value in expr.values]
             if expr.operator == "and":
@@ -32,6 +69,20 @@ class FilterCompiler:
 
     @classmethod
     def _compile_comparison(cls, expr: ComparisonExpr) -> models.Filter:
+        """
+        Compile a comparison expression into a Qdrant filter.
+
+        Args:
+            expr:
+                A comparison expression containing the field name, operator, and value.
+
+        Returns:
+            A Qdrant filter representing the comparison.
+
+        Raises:
+            QueryCompileError:
+                If the comparison operator is not supported.
+        """
         field_name = expr.field_name
         value = expr.value
 

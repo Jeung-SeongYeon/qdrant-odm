@@ -5,6 +5,25 @@ from qdrant_odm.model.fields import PayloadFieldInfo, SparseVectorFieldInfo, Vec
 
 @dataclass(slots=True)
 class ModelMetadata:
+    """
+    Collected ODM metadata for a concrete model class.
+
+    This object represents the compiled schema information derived from a
+    `QdrantModel` subclass definition.
+
+    Attributes:
+        collection_name:
+            The target Qdrant collection name.
+        id_field:
+            The model field used as the Qdrant point id.
+        payload_fields:
+            Mapping of model payload field names to payload metadata.
+        vector_fields:
+            Mapping of model attribute names to dense vector metadata.
+        sparse_vector_fields:
+            Mapping of model attribute names to sparse vector metadata.
+    """
+
     collection_name: str
     id_field: str
     payload_fields: dict[str, PayloadFieldInfo] = field(default_factory=dict)

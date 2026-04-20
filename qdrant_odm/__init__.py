@@ -1,3 +1,5 @@
+"""Public package exports for the qdrant-odm library."""
+
 from qdrant_odm.client import QdrantODM
 from qdrant_odm.exceptions import (
     ModelDefinitionError,
