@@ -22,6 +22,8 @@ from qdrant_odm.model.fields import (
 from qdrant_odm.model.metadata import ModelMetadata
 from qdrant_odm.query.expressions import FieldExpr
 
+_ALLOWED_DISTANCE_VALUES = {"Cosine", "Euclid", "Dot", "Manhattan"}
+
 
 class QdrantModelMeta(type(BaseModel)):
     """
@@ -151,6 +153,11 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
                 if attr_value.info.name in named_vectors:
                     raise ModelDefinitionError(
                         f"{cls.__name__} has duplicated vector name {attr_value.info.name!r}"
+                    )
+                if attr_value.info.distance not in _ALLOWED_DISTANCE_VALUES:
+                    raise ModelDefinitionError(
+                        f"{cls.__name__}.{attr_name} has unsupported distance "
+                        f"{attr_value.info.distance!r}. Allowed: {sorted(_ALLOWED_DISTANCE_VALUES)!r}"
                     )
                 named_vectors.add(attr_value.info.name)
                 vector_fields[attr_name] = attr_value.info

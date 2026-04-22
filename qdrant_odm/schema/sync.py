@@ -5,7 +5,7 @@ from qdrant_odm.exceptions import SchemaConflictError
 from qdrant_odm.model.base import QdrantModel
 from qdrant_odm.schema.diff import SchemaDiff, compute_schema_diff
 from qdrant_odm.schema.planner import SchemaOperation, build_sync_operations
-from qdrant_odm.schema.qdrant_schema import build_payload_index_schema
+from qdrant_odm.schema.qdrant_schema import build_payload_index_schema, to_distance
 
 
 class SchemaManager:
@@ -166,7 +166,7 @@ class SchemaManager:
         for vector_info in meta.vector_fields.values():
             vectors_config[vector_info.name] = models.VectorParams(
                 size=vector_info.size,
-                distance=vector_info.distance,
+                distance=to_distance(vector_info.distance),
                 on_disk=vector_info.on_disk,
             )
         return vectors_config

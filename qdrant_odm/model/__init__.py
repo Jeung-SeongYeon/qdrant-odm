@@ -2,6 +2,7 @@ from qdrant_odm.model.base import QdrantModel
 from qdrant_odm.model.fields import (
     BoolIndexOptions,
     DatetimeIndexOptions,
+    DistanceLiteral,
     FloatIndexOptions,
     GeoIndexOptions,
     IntegerIndexOptions,
@@ -23,6 +24,7 @@ from qdrant_odm.model.serializer import model_from_point, model_to_payload
 __all__ = [
     "BoolIndexOptions",
     "DatetimeIndexOptions",
+    "DistanceLiteral",
     "FloatIndexOptions",
     "GeoIndexOptions",
     "IntegerIndexOptions",

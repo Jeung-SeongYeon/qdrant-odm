@@ -1,3 +1,4 @@
+from typing import Any
 from dataclasses import dataclass, field
 
 from qdrant_client import AsyncQdrantClient
@@ -12,6 +13,13 @@ from qdrant_odm.schema.qdrant_schema import (
     normalize_payload_index_object,
     normalize_sparse_vectors,
 )
+
+def normalize_distance(value: Any) -> str:
+    if value is None:
+        return "none"
+    if hasattr(value, "value"):
+        return str(value.value).lower()
+    return str(value).lower()
 
 
 @dataclass(slots=True)
@@ -116,7 +124,7 @@ async def compute_schema_diff(client: AsyncQdrantClient, model: type[QdrantModel
             vector_mismatches.append(
                 f"Vector size mismatch for {vector_info.name!r}: current={live.size}, desired={vector_info.size}"
             )
-        if str(live.distance) != str(vector_info.distance):
+        if normalize_distance(live.distance) != vector_info.distance.lower():
             vector_mismatches.append(
                 f"Vector distance mismatch for {vector_info.name!r}: current={live.distance}, desired={vector_info.distance}"
             )

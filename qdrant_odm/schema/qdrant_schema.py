@@ -18,6 +18,19 @@ INDEX_TYPES: dict[str, Any] = {
 SUPPORTED_ODM_INDEX_TAGS = frozenset(INDEX_TYPES.keys())
 
 
+def to_distance(value: str) -> models.Distance:
+    """
+    Convert an ODM distance literal into a Qdrant distance enum.
+    """
+    mapping = {
+        "Cosine": models.Distance.COSINE,
+        "Euclid": models.Distance.EUCLID,
+        "Dot": models.Distance.DOT,
+        "Manhattan": models.Distance.MANHATTAN,
+    }
+    return mapping[value]
+
+
 def payload_schema_type_to_tag(data_type: models.PayloadSchemaType | str) -> str:
     """
     Normalize a Qdrant payload schema type into the ODM string tag format.

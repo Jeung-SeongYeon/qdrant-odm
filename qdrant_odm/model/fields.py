@@ -4,6 +4,8 @@ from typing import Any, Literal
 from pydantic import Field
 from qdrant_client.http import models
 
+DistanceLiteral = Literal["Cosine", "Euclid", "Dot", "Manhattan"]
+
 PayloadSchemaLiteral = Literal[
     "keyword",
     "integer",
@@ -156,7 +158,7 @@ class VectorFieldInfo:
 
     name: str
     size: int
-    distance: str
+    distance: DistanceLiteral
     on_disk: bool | None = None
 
 
@@ -220,7 +222,7 @@ class VectorField:
         *,
         name: str,
         size: int,
-        distance: str,
+        distance: DistanceLiteral = "Cosine",
         on_disk: bool | None = None,
     ) -> None:
         """

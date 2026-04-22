@@ -13,6 +13,7 @@ from qdrant_odm.exceptions import (
 from qdrant_odm.model import (
     BoolIndexOptions,
     DatetimeIndexOptions,
+    DistanceLiteral,
     FloatIndexOptions,
     GeoIndexOptions,
     IntegerIndexOptions,
@@ -68,6 +69,7 @@ __all__ = [
     "DEFAULT_RETRIEVE_CHUNK_SIZE",
     "DEFAULT_UPSERT_BATCH_SIZE",
     "DatetimeIndexOptions",
+    "DistanceLiteral",
     "Expr",
     "FieldExpr",
     "FilterCompiler",
