@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.0)
+# 📦 Qdrant ODM (v0.3.2)
 
 `qdrant-odm` is a **Qdrant-first ODM** for building production-grade vector search systems.
 
