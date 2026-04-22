@@ -19,10 +19,11 @@ from qdrant_odm.model.fields import (
     VectorField,
     VectorFieldInfo,
 )
-from qdrant_odm.model.metadata import ModelMetadata
+from qdrant_odm.model.metadata import CollectionConfig, ModelMetadata
 from qdrant_odm.query.expressions import FieldExpr
 
 _ALLOWED_DISTANCE_VALUES = {"Cosine", "Euclid", "Dot", "Manhattan"}
+_ALLOWED_COLLECTION_MODES = {"global", "multitenant"}
 
 
 class QdrantModelMeta(type(BaseModel)):
@@ -79,7 +80,9 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
 
     __collection__: ClassVar[str]
     __id_field__: ClassVar[str] = "id"
+    __collection_config__: ClassVar[CollectionConfig] = CollectionConfig()
     __odm_meta__: ClassVar[ModelMetadata]
+
     model_config = ConfigDict(ignored_types=(VectorField, SparseVectorField))
 
     @classmethod
@@ -108,6 +111,18 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         collection_name = getattr(cls, "__collection__", "")
         if not collection_name:
             raise ModelDefinitionError(f"{cls.__name__} must define __collection__")
+
+        collection_config = getattr(cls, "__collection_config__", CollectionConfig())
+        if not isinstance(collection_config, CollectionConfig):
+            raise ModelDefinitionError(
+                f"{cls.__name__}.__collection_config__ must be a CollectionConfig instance"
+            )
+
+        if collection_config.mode not in _ALLOWED_COLLECTION_MODES:
+            raise ModelDefinitionError(
+                f"{cls.__name__} has unsupported collection mode "
+                f"{collection_config.mode!r}. Allowed: {sorted(_ALLOWED_COLLECTION_MODES)!r}"
+            )
 
         id_field = getattr(cls, "__id_field__", "id")
         if id_field not in cls.model_fields:
@@ -143,6 +158,7 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             payload_fields[field_name] = PayloadFieldInfo()
 
         _validate_payload_index_options(cls, payload_fields)
+        tenant_field = _validate_collection_mode(cls, collection_config, payload_fields)
 
         vector_fields: dict[str, VectorFieldInfo] = {}
         sparse_vector_fields: dict[str, SparseVectorFieldInfo] = {}
@@ -177,6 +193,8 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         cls.__odm_meta__ = ModelMetadata(
             collection_name=collection_name,
             id_field=id_field,
+            collection_config=collection_config,
+            tenant_field=tenant_field,
             payload_fields=payload_fields,
             vector_fields=vector_fields,
             sparse_vector_fields=sparse_vector_fields,
@@ -284,3 +302,44 @@ def _validate_payload_index_options(
                     f"{model_cls.__name__}.{field_name} uses index={payload_info.index!r} "
                     f"but provided incompatible option set {attr_name!r}"
                 )
+
+
+def _validate_collection_mode(
+    model_cls: type[QdrantModel],
+    collection_config: CollectionConfig,
+    payload_fields: dict[str, PayloadFieldInfo],
+) -> str | None:
+    """
+    Validate collection-level constraints.
+
+    For `multitenant` mode, exactly one keyword payload index with
+    `is_tenant=True` must exist.
+
+    Returns:
+        The tenant field name for multitenant models, otherwise None.
+    """
+    if collection_config.mode == "global":
+        return None
+
+    tenant_fields: list[str] = []
+    for field_name, payload_info in payload_fields.items():
+        if payload_info.index != "keyword":
+            continue
+        if payload_info.keyword is None:
+            continue
+        if payload_info.keyword.is_tenant is True:
+            tenant_fields.append(field_name)
+
+    if not tenant_fields:
+        raise ModelDefinitionError(
+            f"{model_cls.__name__} uses multitenant collection mode but does not define "
+            f"a keyword payload index with keyword.is_tenant=True"
+        )
+
+    if len(tenant_fields) > 1:
+        raise ModelDefinitionError(
+            f"{model_cls.__name__} uses multitenant collection mode but defines multiple "
+            f"tenant keyword indexes: {tenant_fields!r}"
+        )
+
+    return tenant_fields[0]

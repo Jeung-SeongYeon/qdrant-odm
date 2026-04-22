@@ -17,12 +17,14 @@ from qdrant_odm.model.fields import (
     VectorField,
     VectorFieldInfo,
 )
-from qdrant_odm.model.metadata import ModelMetadata
+from qdrant_odm.model.metadata import CollectionConfig, CollectionModeLiteral, ModelMetadata
 from qdrant_odm.model.registry import clear_registry, get_model, register_model
 from qdrant_odm.model.serializer import model_from_point, model_to_payload
 
 __all__ = [
     "BoolIndexOptions",
+    "CollectionConfig",
+    "CollectionModeLiteral",
     "DatetimeIndexOptions",
     "DistanceLiteral",
     "FloatIndexOptions",

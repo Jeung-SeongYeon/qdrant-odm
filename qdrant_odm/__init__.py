@@ -12,6 +12,8 @@ from qdrant_odm.exceptions import (
 )
 from qdrant_odm.model import (
     BoolIndexOptions,
+    CollectionConfig,
+    CollectionModeLiteral,
     DatetimeIndexOptions,
     DistanceLiteral,
     FloatIndexOptions,
@@ -65,6 +67,8 @@ from qdrant_odm.utils.chunking import chunked
 
 __all__ = [
     "BoolIndexOptions",
+    "CollectionConfig",
+    "CollectionModeLiteral",
     "ComparisonExpr",
     "DEFAULT_RETRIEVE_CHUNK_SIZE",
     "DEFAULT_UPSERT_BATCH_SIZE",

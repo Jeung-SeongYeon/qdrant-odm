@@ -1,14 +1,19 @@
-# 📦 Qdrant ODM (v0.2)
+# 📦 Qdrant ODM (v0.3.0)
 
-`qdrant-odm` is a Qdrant-first ODM designed for building production-grade vector search systems with:
+`qdrant-odm` is a **Qdrant-first ODM** for building production-grade vector search systems.
 
-- declarative model schema
-- explicit payload indexing
-- safe schema synchronization (diff → plan → sync)
+---
+
+# 🚀 Features
+
+- Declarative schema (Pydantic-based)
+- Explicit payload indexing with fine-grained control
+- Collection modes (global / multitenant)
+- Safe schema sync (diff → plan → sync)
 - Python-native filter DSL
-- async repository abstraction
-- hybrid retrieval (dense + sparse with RRF)
-- batch-optimized operations
+- Async repository abstraction
+- Hybrid retrieval (dense + sparse with RRF)
+- Batch optimized operations
 
 ---
 
@@ -20,198 +25,195 @@ pip install -e ".[dev]"
 
 ---
 
-# 🚀 Quick Start
+# 🧠 Architecture Overview
+
+```
+Model → Metadata → SchemaManager → Qdrant
+     ↘ Query DSL → Compiler → Filter
+     ↘ Repository → CRUD / Search
+```
+
+---
+
+# 📌 Model Definition
+
+## Basic Model
 
 ```python
+from uuid import UUID
 from datetime import datetime
-from uuid import UUID, uuid4
-
-from qdrant_client import AsyncQdrantClient
-from qdrant_odm import (
-    PayloadField,
-    QdrantModel,
-    QdrantODM,
-    QdrantRepository,
-    SearchQuery,
-    SparseVectorField,
-    VectorField,
-)
+from qdrant_odm import QdrantModel, PayloadField, VectorField
 
 class Document(QdrantModel):
     __collection__ = "documents"
 
     id: UUID
     title: str = PayloadField(index="keyword")
-    page: int | None = PayloadField(index="integer")
-    category: str = PayloadField(index="keyword")
     created_at: datetime = PayloadField(index="datetime")
 
-    dense = VectorField(name="content_dense", size=3072, distance="Cosine")
-    sparse = SparseVectorField(name="content_sparse")
-
-async def run():
-    client = AsyncQdrantClient(url="http://localhost:6333")
-
-    odm = QdrantODM(client)
-    await odm.sync_schema(Document)
-
-    repo = QdrantRepository[Document](client, Document)
-
-    doc = Document(
-        id=uuid4(),
-        title="Some Documents",
-        page=1,
-        category="Some Category",
-        created_at=datetime.now(),
-    )
-
-    await repo.upsert(
-        doc,
-        vectors={
-            "content_dense": [0.1] * 3072,
-            "content_sparse": {"indices": [1, 3], "values": [0.4, 0.7]},
-        },
-    )
+    dense = VectorField(name="content_dense", size=3072)
 ```
 
 ---
 
-# 🧠 Core Concepts
+# 📌 Collection Modes
 
-## 1. Model = Payload + Schema (Vectors are separate)
-
-- Pydantic fields → payload
-- VectorField → schema only
-- SparseVectorField → schema only
-
-Vectors are **not stored in the model instance**
+## Global (default)
 
 ```python
-await repo.upsert(model, vectors={...})
+__collection_config__ = CollectionConfig(mode="global")
 ```
 
----
-
-## 2. Payload fields vs Indexed fields
+## Multitenant
 
 ```python
-title: str                     # stored, NOT indexed
-title: PayloadField(index="keyword")  # stored + indexed
+from qdrant_odm import CollectionConfig, KeywordIndexOptions
+
+__collection_config__ = CollectionConfig(mode="multitenant")
+
+tenant_id: str = PayloadField(
+    index="keyword",
+    keyword=KeywordIndexOptions(is_tenant=True)
+)
 ```
 
-| Type | Stored | Indexed | Filter | Performance |
-|------|--------|---------|--------|------------|
-| Normal field | ✅ | ❌ | ✅ | ❌ slow |
-| PayloadField | ✅ | ✅ | ✅ | ✅ fast |
+### Rules
+
+- Exactly ONE tenant index
+- Must be keyword
+- Must set `is_tenant=True`
 
 ---
 
-## 3. Filter DSL
+# 📌 Vector Definition
+
+```python
+VectorField(
+    name="content_dense",
+    size=3072,
+    distance="Cosine"
+)
+```
+
+### Supported distances
+
+- Cosine
+- Euclid
+- Dot
+- Manhattan
+
+---
+
+# 📌 Payload Index Options
+
+```python
+from qdrant_odm import IntegerIndexOptions
+
+page: int = PayloadField(
+    index="integer",
+    integer=IntegerIndexOptions(
+        lookup=True,
+        range=True,
+        on_disk=True
+    )
+)
+```
+
+Supported:
+
+- keyword
+- integer
+- float
+- bool
+- geo
+- datetime
+- text
+- uuid
+
+---
+
+# 🔍 Query DSL
 
 ```python
 (Document.category == "law") & (Document.page >= 2)
 ```
 
-Supported:
+Supports:
 
-- `== != > >= < <=`
-- `.in_()`
-- `.not_in()`
-- `.is_null()`
-- `.is_not_null()`
-- `& | ~`
+- == != > >= < <=
+- in_ / not_in
+- is_null / is_not_null
+- &, |, ~
 
 ---
 
-## 4. Repository
+# 📦 Repository
 
 ```python
 repo = QdrantRepository(client, Document)
 ```
 
-### CRUD
+## CRUD
 
 ```python
 await repo.get(id)
-await repo.get_many(ids)
 await repo.delete(id)
 await repo.exists(id)
 ```
 
----
-
-### Upsert
+## Batch
 
 ```python
-await repo.upsert(model, vectors={...})
+await repo.upsert_many([...])
 ```
 
-Batch:
+## Scroll
 
 ```python
-await repo.upsert_many([
-    (model1, vectors1),
-    (model2, vectors2),
-])
+page = await repo.scroll()
 ```
 
 ---
 
-### Scroll
+# 🔍 Search
 
-```python
-page = await repo.scroll(limit=100)
-page.items
-page.next_offset
-```
-
----
-
-### Count
-
-```python
-await repo.count(filter=...)
-```
-
----
-
-## 5. Search
-
-### Dense
+## Dense
 
 ```python
 await repo.search(SearchQuery(...))
 ```
 
-### Sparse
+## Sparse
 
 ```python
 SparseVectorInput(indices=[...], values=[...])
 ```
 
-### Hybrid (RRF)
+## Hybrid
 
 ```python
 await repo.search_hybrid(HybridSearchQuery(...))
 ```
 
+Uses RRF internally.
+
 ---
 
-## 6. Schema Sync
+# 🧬 Schema Sync
 
-### Diff
-
-```python
-diff = await odm.schema.diff(Model)
-```
-
-### Dry Run
+## Diff
 
 ```python
-plan = await odm.schema.dry_run(Model)
+await odm.schema.diff(Model)
 ```
 
-### Sync
+## Dry Run
+
+```python
+await odm.schema.dry_run(Model)
+```
+
+## Sync
 
 ```python
 await odm.sync_schema(Model)
@@ -219,64 +221,49 @@ await odm.sync_schema(Model)
 
 ---
 
-# ⚠️ Important Behaviors
+# ⚠️ Behavior Rules
 
-## Undeclared payload
+## Safe Sync
 
-- upsert → ONLY model fields
-- set_payload → ANY payload allowed
+Will NOT modify:
 
-## Index is NOT automatic
+- vector schema
+- index type
+- index options
 
-Explicit declaration required.
+Only:
 
-## Schema sync is safe
-
-Will NOT auto-fix:
-
-- vector mismatch
-- index type mismatch
-
-## Filter ignores index
-
-Allowed but slow.
-
-## Hybrid search is not native
-
-Uses:
-
-- dense search
-- sparse search
-- RRF merge
+- create collection
+- create missing indexes
 
 ---
 
-# ⚡ Advanced Usage
+## Payload Behavior
 
-## Custom batching
+- upsert → model fields only
+- set_payload → free form
 
-```python
-await repo.get_many(ids, chunk_size=256)
-await repo.upsert_many(items, batch_size=200)
-```
+---
 
-## Scroll loop
+## Filtering
 
-```python
-offset = None
-while True:
-    page = await repo.scroll(offset=offset)
-    if not page.items:
-        break
-    offset = page.next_offset
-```
+- Works without index
+- Slower without index
+
+---
+
+# ⚡ Performance Tips
+
+- Always index filter fields
+- Use batch operations
+- Use scroll for large datasets
+- Use hybrid search for recall boost
 
 ---
 
 # 🔥 Summary
 
-- Qdrant-first ODM
-- strict schema + flexible payload patch
-- explicit indexing model
-- Python DSL queries
+- Qdrant-native ODM
+- strict schema guarantees
+- multitenant ready
 - production-ready async design

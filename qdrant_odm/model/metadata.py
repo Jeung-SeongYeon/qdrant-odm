@@ -1,6 +1,18 @@
+from typing import Literal
 from dataclasses import dataclass, field
 
 from qdrant_odm.model.fields import PayloadFieldInfo, SparseVectorFieldInfo, VectorFieldInfo
+
+CollectionModeLiteral = Literal["global", "multitenant"]
+
+
+@dataclass(slots=True)
+class CollectionConfig:
+    """
+    Collection-level ODM configuration.
+    """
+
+    mode: CollectionModeLiteral = "global"
 
 
 @dataclass(slots=True)
@@ -26,6 +38,8 @@ class ModelMetadata:
 
     collection_name: str
     id_field: str
+    collection_config: CollectionConfig = field(default_factory=CollectionConfig)
+    tenant_field: str | None = None
     payload_fields: dict[str, PayloadFieldInfo] = field(default_factory=dict)
     vector_fields: dict[str, VectorFieldInfo] = field(default_factory=dict)
     sparse_vector_fields: dict[str, SparseVectorFieldInfo] = field(default_factory=dict)

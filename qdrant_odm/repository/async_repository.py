@@ -3,8 +3,10 @@ from typing import Any, Generic, Sequence, TypeVar
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
+from qdrant_odm.exceptions import RepositoryError
 from qdrant_odm.model.base import QdrantModel
 from qdrant_odm.query.compiler import FilterCompiler
+from qdrant_odm.query.expressions import FieldExpr
 from qdrant_odm.query.filters import FilterExpression
 from qdrant_odm.query.search import HybridSearchQuery, SearchQuery, SparseVectorInput
 from qdrant_odm.repository.base import DEFAULT_RETRIEVE_CHUNK_SIZE, DEFAULT_UPSERT_BATCH_SIZE
@@ -204,7 +206,7 @@ class QdrantRepository(Generic[T]):
         )
         return bool(records)
 
-    async def count(self, filter: FilterExpression | None = None) -> int:
+    async def count(self, filter: FilterExpression | None = None, *, tenant: Any | None = None) -> int:
         """
         Count points in the collection, optionally filtered by a query expression.
 
@@ -215,7 +217,8 @@ class QdrantRepository(Generic[T]):
         Returns:
             The number of matching points.
         """
-        query_filter = FilterCompiler.compile(filter)
+        merged_filter = self._merge_filter(filter, tenant)
+        query_filter = FilterCompiler.compile(merged_filter)
         result = await self.client.count(
             collection_name=self.meta.collection_name,
             count_filter=query_filter,
@@ -230,6 +233,7 @@ class QdrantRepository(Generic[T]):
         limit: int = 100,
         offset: Any | None = None,
         with_vectors: bool = False,
+        tenant: Any | None = None,
     ) -> ScrollPage[T]:
         """
         Scroll through points in the collection with optional filtering.
@@ -250,7 +254,8 @@ class QdrantRepository(Generic[T]):
         Returns:
             A scroll page containing deserialized model instances and the next offset.
         """
-        query_filter = FilterCompiler.compile(filter)
+        merged_filter = self._merge_filter(filter, tenant)
+        query_filter = FilterCompiler.compile(merged_filter)
         points, next_offset = await self.client.scroll(
             collection_name=self.meta.collection_name,
             scroll_filter=query_filter,
@@ -262,7 +267,7 @@ class QdrantRepository(Generic[T]):
         items = [self.model.from_point(point_id=point.id, payload=point.payload) for point in points]
         return ScrollPage(items=items, next_offset=next_offset)
 
-    async def search(self, query: SearchQuery) -> list[SearchHit[T]]:
+    async def search(self, query: SearchQuery, *, tenant: Any | None = None) -> list[SearchHit[T]]:
         """
         Execute a dense or sparse search query and return typed search hits.
 
@@ -274,16 +279,19 @@ class QdrantRepository(Generic[T]):
             A list of typed search hits containing score, payload, optional vectors,
             and the deserialized model instance.
         """
+        merged_filter = self._merge_filter(query.filter, tenant)
+
         search_result = await self.client.search(
             collection_name=self.meta.collection_name,
             query_vector=self._compile_query_vector(query),
-            query_filter=FilterCompiler.compile(query.filter),
+            query_filter=FilterCompiler.compile(merged_filter),
             limit=query.limit,
             offset=query.offset,
             with_payload=query.with_payload,
             with_vectors=query.with_vectors,
             score_threshold=query.score_threshold,
         )
+
         hits: list[SearchHit[T]] = []
         for point in search_result:
             payload = dict(point.payload or {})
@@ -299,7 +307,7 @@ class QdrantRepository(Generic[T]):
             )
         return hits
 
-    async def search_hybrid(self, query: HybridSearchQuery) -> list[SearchHit[T]]:
+    async def search_hybrid(self, query: HybridSearchQuery, *, tenant: Any | None = None) -> list[SearchHit[T]]:
         """
         Execute a hybrid search by combining dense and sparse search results.
 
@@ -324,7 +332,8 @@ class QdrantRepository(Generic[T]):
                 with_payload=query.with_payload,
                 with_vectors=query.with_vectors,
                 score_threshold=query.score_threshold,
-            )
+            ),
+            tenant=tenant
         )
         sparse_hits = await self.search(
             SearchQuery(
@@ -335,7 +344,8 @@ class QdrantRepository(Generic[T]):
                 with_payload=query.with_payload,
                 with_vectors=query.with_vectors,
                 score_threshold=query.score_threshold,
-            )
+            ),
+            tenant=tenant
         )
         return self._fuse_hits_rrf(dense_hits=dense_hits, sparse_hits=sparse_hits, limit=query.limit, k=query.fusion_k)
 
@@ -411,3 +421,32 @@ class QdrantRepository(Generic[T]):
                 )
             )
         return fused_hits
+
+    def _tenant_filter(self, tenant: Any | None) -> FilterExpression | None:
+        if self.meta.collection_config.mode == "global":
+            return None
+
+        tenant_field = self.meta.tenant_field
+        if tenant_field is None:
+            raise RepositoryError(
+                f"{self.model.__name__} is multitenant but tenant_field is not configured"
+            )
+
+        if tenant is None:
+            raise RepositoryError(
+                f"{self.model.__name__} is multitenant and requires a tenant value"
+            )
+
+        return FieldExpr(field_name=tenant_field) == tenant
+
+    def _merge_filter(
+        self,
+        base_filter: FilterExpression | None,
+        tenant: Any | None,
+    ) -> FilterExpression | None:
+        tenant_filter = self._tenant_filter(tenant)
+        if tenant_filter is None:
+            return base_filter
+        if base_filter is None:
+            return tenant_filter
+        return tenant_filter & base_filter
