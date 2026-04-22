@@ -4,6 +4,135 @@
 
 ---
 
+# Why qdrant-odm?
+
+Working with raw Qdrant is powerful, but it gets verbose as your project grows.
+
+Typical pain points:
+
+- Repeating payload field names as raw strings
+- Manually managing collection and index setup
+- Writing filters in low-level Qdrant syntax
+- Mixing schema, query, and repository logic in application code
+
+`qdrant-odm` keeps Qdrant native, but gives you a more structured way to work with it.
+
+## Before: raw Qdrant client
+
+```python
+from uuid import uuid4
+from qdrant_client import AsyncQdrantClient
+from qdrant_client.http import models as qm
+
+client = AsyncQdrantClient(url="http://localhost:6333")
+
+await client.create_collection(
+    collection_name="documents",
+    vectors_config={
+        "content_dense": qm.VectorParams(size=3072, distance=qm.Distance.COSINE)
+    }
+)
+
+await client.create_payload_index(
+    collection_name="documents",
+    field_name="title",
+    field_schema=qm.PayloadSchemaType.KEYWORD
+)
+
+await client.upsert(
+    collection_name="documents",
+    points=[
+        qm.PointStruct(
+            id=str(uuid4()),
+            vector={"content_dense": [0.1] * 3072},
+            payload={
+                "title": "Qdrant ODM",
+                "category": "tech",
+                "page": 1,
+            },
+        )
+    ],
+)
+
+results = await client.query_points(
+    collection_name="documents",
+    query=[0.1] * 3072,
+    using="content_dense",
+    query_filter=qm.Filter(
+        must=[
+            qm.FieldCondition(
+                key="category",
+                match=qm.MatchValue(value="tech")
+            ),
+            qm.FieldCondition(
+                key="page",
+                range=qm.Range(gte=1)
+            ),
+        ]
+    ),
+    limit=10,
+)
+```
+
+## After: qdrant-odm
+
+```python
+from uuid import UUID, uuid4
+from qdrant_odm import (
+    QdrantModel,
+    PayloadField,
+    VectorField,
+    QdrantODM,
+    QdrantRepository,
+    SearchQuery,
+)
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+
+    id: UUID
+    title: str = PayloadField(index="keyword")
+    category: str = PayloadField(index="keyword")
+    page: int = PayloadField(index="integer")
+
+    dense = VectorField(name="content_dense", size=3072)
+
+odm = QdrantODM(client)
+await odm.sync_schema(Document)
+
+repo = QdrantRepository(client, Document)
+
+await repo.upsert(
+    Document(
+        id=uuid4(),
+        title="Qdrant ODM",
+        category="tech",
+        page=1,
+    ),
+    vectors={
+        "content_dense": [0.1] * 3072,
+    },
+)
+
+results = await repo.search(
+    SearchQuery(
+        vector=[0.1] * 3072,
+        using="content_dense",
+        filter=(Document.category == "tech") & (Document.page >= 1),
+        limit=10,
+    )
+)
+```
+
+## What changes?
+- Schema is defined once in the model
+- Index configuration lives next to fields
+- Filters use Python expressions instead of raw payload strings
+- Repositories keep CRUD and search logic consistent
+- Schema sync reduces collection setup boilerplate
+
+---
+
 # 🚀 Features
 
 - Declarative schema (Pydantic-based)
@@ -19,7 +148,16 @@
 
 # 🚀 Installation
 
+## Installation
+
 ```bash
+pip install qdrant-odmx
+```
+
+## Development
+```python
+git clone https://github.com/yourname/qdrant-odmx
+cd qdrant-odmx
 pip install -e ".[dev]"
 ```
 

@@ -1,13 +1,36 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "qdrant-odm"
-version = "0.2.0"
-description = "Qdrant-first ODM for typed models and vector search."
+name = "qdrant-odmx"
+version = "0.3.1"
+description = "A Qdrant-first ODM for typed models, schema sync, and vector search."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Jeung-SeongYeon" }
+]
+keywords = [
+  "qdrant",
+  "odm",
+  "vector-database",
+  "vector-search",
+  "rag",
+  "semantic-search",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Database",
+  "Typing :: Typed",
+]
 dependencies = [
   "pydantic>=2.7.0",
   "qdrant-client>=1.9.0",
@@ -17,7 +40,16 @@ dependencies = [
 dev = [
   "pytest>=8.2.0",
   "pytest-asyncio>=0.23.0",
+  "build>=1.2.1",
+  "twine>=5.1.1",
 ]
+
+[project.urls]
+Repository = "https://github.com/Jeung-SeongYeon/qdrant-odm"
+Issues = "https://github.com/Jeung-SeongYeon/qdrant-odm/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["qdrant_odm"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
