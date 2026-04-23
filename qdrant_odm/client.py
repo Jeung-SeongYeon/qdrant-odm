@@ -41,3 +41,27 @@ class QdrantODM:
                 The ODM model class whose schema should be synchronized.
         """
         await self.schema.sync(model)
+
+    async def recover_from_snapshot(
+        self,
+        model: type[QdrantModel],
+        *,
+        snapshot_path: str,
+        overwrite: bool = False,
+    ) -> None:
+        """
+        Recover the live Qdrant collection from snapshot.
+
+        This is a convenience wrapper around the schema manager.
+
+        Args:
+            snapshot_path:
+                The path of snapshot for recover.
+            overwrite:
+                overwrite option.
+        """
+        await self.schema.recover_from_snapshot(
+            model,
+            snapshot_path=snapshot_path,
+            overwrite=overwrite,
+        )

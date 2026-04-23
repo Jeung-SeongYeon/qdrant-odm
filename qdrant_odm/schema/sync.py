@@ -1,3 +1,5 @@
+import warnings
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
@@ -187,3 +189,95 @@ class SchemaManager:
         for sparse_info in meta.sparse_vector_fields.values():
             sparse_vectors_config[sparse_info.name] = models.SparseVectorParams()
         return sparse_vectors_config
+
+    async def recover_from_snapshot(
+        self,
+        model: type[QdrantModel],
+        *,
+        snapshot_path: str,
+        overwrite: bool = False,
+    ) -> None:
+        """
+        Recover a collection from a snapshot file.
+
+        Args:
+            model:
+                The ODM model whose collection should be recovered.
+            snapshot_path:
+                Snapshot location understood by Qdrant.
+            overwrite:
+                If False, recovery fails when the collection already exists.
+                If True, the existing collection is deleted before recovery.
+
+        Raises:
+            SchemaConflictError:
+                If snapshot_path is empty or overwrite is False and the collection exists.
+        """
+        if not snapshot_path:
+            raise SchemaConflictError("snapshot_path is required for snapshot recovery")
+
+        collection_name = model.collection_name()
+        exists = await self.client.collection_exists(collection_name)
+
+        if exists and not overwrite:
+            raise SchemaConflictError(
+                f"Collection {collection_name!r} already exists. "
+                "Use overwrite=True to replace it from snapshot."
+            )
+
+        if exists and overwrite:
+            await self.client.delete_collection(collection_name=collection_name)
+
+        await self.client.recover_snapshot(
+            collection_name=collection_name,
+            location=snapshot_path,
+        )
+
+        # TODO: return schema diff after recover to allow callers to inspect mismatches
+        #       and decide whether to warn, log, or raise errors instead of relying on warnings
+        schema_diff = await self.diff(model)
+        if schema_diff.has_blocking_issues() or schema_diff.payload_index_missing:
+            warnings.warn(
+                self._format_snapshot_recovery_warning(model, schema_diff),
+                stacklevel=2,
+            )
+
+    def _format_snapshot_recovery_warning(
+        self,
+        model: type[QdrantModel],
+        schema_diff: SchemaDiff,
+    ) -> str:
+        """
+        Format a warning message for schema differences detected after snapshot recovery.
+        """
+        parts: list[str] = [
+            f"Snapshot recovery completed for collection {model.collection_name()!r}, "
+            "but the recovered collection does not fully match the ODM model schema."
+        ]
+
+        if schema_diff.vector_missing:
+            parts.append(f"missing vectors={schema_diff.vector_missing!r}")
+        if schema_diff.vector_mismatches:
+            parts.append(f"vector mismatches={schema_diff.vector_mismatches!r}")
+        if schema_diff.sparse_missing:
+            parts.append(f"missing sparse vectors={schema_diff.sparse_missing!r}")
+        if schema_diff.payload_index_missing:
+            parts.append(f"missing payload indexes={schema_diff.payload_index_missing!r}")
+        if schema_diff.payload_index_type_mismatches:
+            parts.append(
+                f"payload index type mismatches={schema_diff.payload_index_type_mismatches!r}"
+            )
+        if schema_diff.payload_index_option_mismatches:
+            parts.append(
+                f"payload index option mismatches={schema_diff.payload_index_option_mismatches!r}"
+            )
+        if schema_diff.extra_vector_names_in_collection:
+            parts.append(
+                f"extra vectors in collection={schema_diff.extra_vector_names_in_collection!r}"
+            )
+        if schema_diff.extra_sparse_vector_names_in_collection:
+            parts.append(
+                f"extra sparse vectors in collection={schema_diff.extra_sparse_vector_names_in_collection!r}"
+            )
+
+        return " ".join(parts)

@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.3)
+# 📦 Qdrant ODM (v0.3.4)
 
 `qdrant-odm` is a **Qdrant-first ODM** for building production-grade vector search systems.
 
@@ -356,6 +356,31 @@ await odm.schema.dry_run(Model)
 ```python
 await odm.sync_schema(Model)
 ```
+
+## Recover from Snapshot
+
+```python
+await odm.recover_from_snapshot(
+    Model,
+    snapshot_path="file:///absolute/path/to/collection.snapshot",
+)
+```
+
+### Overwrite existing collection
+```python
+await odm.recover_from_snapshot(
+    Model,
+    snapshot_path="file:///absolute/path/to/collection.snapshot",
+    overwrite=True,
+)
+```
+
+### Notes
+- `snapshot_path` should be a valid snapshot location understood by Qdrant
+- Relative paths such as `./test.snapshot` are not supported directly
+- Use `overwrite=True` to replace an existing collection before recovery
+- After recovery, qdrant-odm runs a schema diff check
+- If the recovered collection does not fully match the ODM model schema, a warning is emitted
 
 ---
 
