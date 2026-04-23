@@ -1,5 +1,7 @@
 # 📦 Qdrant ODM (v0.3.4)
 
+[English](./README.md)
+
 `qdrant-odm`은 프로덕션 환경의 벡터 검색 시스템 구축을 위한 **Qdrant 전용 ODM(Object Document Mapper)** 입니다.
 
 ---

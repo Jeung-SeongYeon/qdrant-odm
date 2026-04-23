@@ -1,5 +1,7 @@
 # 📦 Qdrant ODM (v0.3.4)
 
+[한국어(Korean)](./README-KR.md)
+
 `qdrant-odm` is a **Qdrant-first ODM** for building production-grade vector search systems.
 
 ---
