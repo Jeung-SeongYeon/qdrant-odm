@@ -156,8 +156,8 @@ pip install qdrant-odmx
 
 ## Development
 ```python
-git clone https://github.com/yourname/qdrant-odmx
-cd qdrant-odmx
+git clone https://github.com/Jeung-SeongYeon/qdrant-odm
+cd qdrant-odm
 pip install -e ".[dev]"
 ```
 
