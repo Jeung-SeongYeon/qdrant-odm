@@ -218,7 +218,7 @@ class QdrantRepository(Generic[T]):
             The number of matching points.
         """
         merged_filter = self._merge_filter(filter, tenant)
-        query_filter = FilterCompiler.compile(merged_filter)
+        query_filter = FilterCompiler.compile(merged_filter, model=self.model)
         result = await self.client.count(
             collection_name=self.meta.collection_name,
             count_filter=query_filter,
@@ -255,7 +255,7 @@ class QdrantRepository(Generic[T]):
             A scroll page containing deserialized model instances and the next offset.
         """
         merged_filter = self._merge_filter(filter, tenant)
-        query_filter = FilterCompiler.compile(merged_filter)
+        query_filter = FilterCompiler.compile(merged_filter, model=self.model)
         points, next_offset = await self.client.scroll(
             collection_name=self.meta.collection_name,
             scroll_filter=query_filter,
@@ -284,7 +284,7 @@ class QdrantRepository(Generic[T]):
         search_result = await self.client.search(
             collection_name=self.meta.collection_name,
             query_vector=self._compile_query_vector(query),
-            query_filter=FilterCompiler.compile(merged_filter),
+            query_filter=FilterCompiler.compile(merged_filter, model=self.model),
             limit=query.limit,
             offset=query.offset,
             with_payload=query.with_payload,
