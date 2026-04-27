@@ -13,6 +13,7 @@ from qdrant_odm.repository.base import DEFAULT_RETRIEVE_CHUNK_SIZE, DEFAULT_UPSE
 from qdrant_odm.repository.result import SearchHit
 from qdrant_odm.types import ScrollPage
 from qdrant_odm.utils.chunking import chunked
+from qdrant_odm.transaction import Transaction
 
 T = TypeVar("T", bound=QdrantModel)
 
@@ -108,7 +109,7 @@ class QdrantRepository(Generic[T]):
             )
         return results
 
-    async def upsert(self, obj: T, *, vectors: dict[str, Any]) -> None:
+    async def upsert(self, obj: T, *, vectors: dict[str, Any], tx: Transaction | None = None) -> None:
         """
         Upsert a single model instance together with its vector data.
 
@@ -117,15 +118,21 @@ class QdrantRepository(Generic[T]):
                 The model instance to store.
             vectors:
                 A mapping of Qdrant named vector keys to vector values.
+            tx:
+                Optional transaction to buffer this operation.
         """
         point = models.PointStruct(id=obj.model_id(), payload=obj.to_payload(), vector=vectors)
-        await self.client.upsert(collection_name=self.meta.collection_name, points=[point])
+        if tx:
+            tx.add_operation(self.meta.collection_name, models.UpsertOperation(upsert=models.PointsList(points=[point])))
+        else:
+            await self.client.upsert(collection_name=self.meta.collection_name, points=[point])
 
     async def upsert_many(
         self,
         items: Sequence[tuple[T, dict[str, Any]]],
         *,
         batch_size: int | None = None,
+        tx: Transaction | None = None,
     ) -> None:
         """
         Upsert multiple model instances in batches.
@@ -135,6 +142,8 @@ class QdrantRepository(Generic[T]):
                 A sequence of `(model, vectors)` pairs.
             batch_size:
                 Optional batch size override. If omitted, the default upsert batch size is used.
+            tx:
+                Optional transaction to buffer this operation.
         """
         if not items:
             return
@@ -144,33 +153,46 @@ class QdrantRepository(Generic[T]):
                 models.PointStruct(id=obj.model_id(), payload=obj.to_payload(), vector=vectors)
                 for obj, vectors in batch
             ]
-            await self.client.upsert(collection_name=self.meta.collection_name, points=points)
+            if tx:
+                tx.add_operation(self.meta.collection_name, models.UpsertOperation(upsert=models.PointsList(points=points)))
+            else:
+                await self.client.upsert(collection_name=self.meta.collection_name, points=points)
 
-    async def delete(self, point_id: str | int) -> None:
+    async def delete(self, point_id: str | int, *, tx: Transaction | None = None) -> None:
         """
         Delete a single point by id.
 
         Args:
             point_id:
                 The Qdrant point id to delete.
+            tx:
+                Optional transaction to buffer this operation.
         """
         selector = models.PointIdsList(points=[point_id])
-        await self.client.delete(collection_name=self.meta.collection_name, points_selector=selector)
+        if tx:
+            tx.add_operation(self.meta.collection_name, models.DeleteOperation(delete=selector))
+        else:
+            await self.client.delete(collection_name=self.meta.collection_name, points_selector=selector)
 
-    async def delete_many(self, ids: Sequence[str | int]) -> None:
+    async def delete_many(self, ids: Sequence[str | int], *, tx: Transaction | None = None) -> None:
         """
         Delete multiple points by id.
 
         Args:
             ids:
                 The point ids to delete.
+            tx:
+                Optional transaction to buffer this operation.
         """
         if not ids:
             return
         selector = models.PointIdsList(points=list(ids))
-        await self.client.delete(collection_name=self.meta.collection_name, points_selector=selector)
+        if tx:
+            tx.add_operation(self.meta.collection_name, models.DeleteOperation(delete=selector))
+        else:
+            await self.client.delete(collection_name=self.meta.collection_name, points_selector=selector)
 
-    async def set_payload(self, point_id: str | int, payload: dict[str, Any]) -> None:
+    async def set_payload(self, point_id: str | int, payload: dict[str, Any], *, tx: Transaction | None = None) -> None:
         """
         Update payload values for a single point.
 
@@ -179,13 +201,18 @@ class QdrantRepository(Generic[T]):
                 The Qdrant point id to update.
             payload:
                 The payload values to set.
+            tx:
+                Optional transaction to buffer this operation.
         """
         selector = models.PointIdsList(points=[point_id])
-        await self.client.set_payload(
-            collection_name=self.meta.collection_name,
-            payload=payload,
-            points=selector,
-        )
+        if tx:
+            tx.add_operation(self.meta.collection_name, models.SetPayloadOperation(set_payload=models.SetPayload(payload=payload, points=[point_id])))
+        else:
+            await self.client.set_payload(
+                collection_name=self.meta.collection_name,
+                payload=payload,
+                points=selector,
+            )
 
     async def exists(self, point_id: str | int) -> bool:
         """

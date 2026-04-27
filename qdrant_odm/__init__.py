@@ -64,6 +64,7 @@ from qdrant_odm.schema import (
 )
 from qdrant_odm.types import ScrollPage
 from qdrant_odm.utils.chunking import chunked
+from qdrant_odm.transaction import Transaction
 
 __all__ = [
     "BoolIndexOptions",
@@ -109,6 +110,7 @@ __all__ = [
     "SparseVectorInput",
     "TextIndexOptions",
     "TokenizerLiteral",
+    "Transaction",
     "UuidIndexOptions",
     "VectorField",
     "VectorFieldInfo",
