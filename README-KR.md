@@ -298,6 +298,21 @@ await repo.exists(id)
 await repo.upsert_many([...])
 ```
 
+## Transaction (Unit of Work)
+
+`Transaction` 컨텍스트 매니저를 사용하면 여러 작업(upsert, delete, set_payload)을 안전하게 버퍼링하고 단일 배치로 Qdrant에 반영할 수 있습니다. 예외가 발생하면 버퍼링된 작업은 안전하게 폐기(롤백)됩니다.
+
+```python
+from qdrant_odm import Transaction
+
+async with Transaction(client) as tx:
+    await repo.upsert(obj1, vectors={"content_dense": [...]}, tx=tx)
+    await repo.set_payload(obj1.id, {"status": "updated"}, tx=tx)
+    await repo.delete(obj2.id, tx=tx)
+    
+    # 블록이 끝날 때 자동으로 `batch_update_points`를 통해 일괄 반영됩니다.
+```
+
 ## Scroll
 
 ```python

@@ -307,6 +307,21 @@ await repo.exists(id)
 await repo.upsert_many([...])
 ```
 
+## Transaction (Unit of Work)
+
+Using the `Transaction` context manager, you can safely buffer operations (upsert, delete, set_payload) and submit them in a single batch to Qdrant. If an exception occurs, all buffered operations are safely discarded.
+
+```python
+from qdrant_odm import Transaction
+
+async with Transaction(client) as tx:
+    await repo.upsert(obj1, vectors={"content_dense": [...]}, tx=tx)
+    await repo.set_payload(obj1.id, {"status": "updated"}, tx=tx)
+    await repo.delete(obj2.id, tx=tx)
+    
+    # Operations are automatically committed at the end of the block via `batch_update_points`
+```
+
 ## Scroll
 
 ```python
