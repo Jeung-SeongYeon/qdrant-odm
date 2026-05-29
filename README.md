@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.6)
+# 📦 Qdrant ODM (v0.3.7)
 
 [한국어(Korean)](./README-KR.md)
 
