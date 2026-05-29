@@ -196,25 +196,69 @@ class Document(QdrantModel):
 
 ---
 
-# 📌 Collection 모드
+# 📌 Collection 설정 및 모드 (Collection Configuration)
 
-## Global
+`__collection_config__`를 사용하여 컬렉션 수준의 설정을 구성할 수 있습니다.
+
+## 모드 (Modes)
+
+### Global (기본값)
 ```python
-__collection_config__ = CollectionConfig(mode="global")
+from qdrant_odm import CollectionConfig
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(mode="global")
 ```
 
-## Multitenant
+### Multitenant (멀티테넌트)
 ```python
-tenant_id: str = PayloadField(
-    index="keyword",
-    keyword=KeywordIndexOptions(is_tenant=True)
-)
+from qdrant_odm import CollectionConfig, KeywordIndexOptions
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(mode="multitenant")
+
+    tenant_id: str = PayloadField(
+        index="keyword",
+        keyword=KeywordIndexOptions(is_tenant=True)
+    )
 ```
 
-규칙:
-- tenant index는 반드시 1개
-- keyword 타입
-- is_tenant=True 필수
+#### 규칙
+- tenant index는 반드시 1개만 설정 가능
+- keyword 타입이어야 함
+- `is_tenant=True` 설정이 필수
+
+## 고급 설정 파라미터 (Advanced Parameters)
+
+`CollectionConfig`는 컬렉션 생성(`sync_schema`) 시 적용할 수 있는 Qdrant 네이티브 설정 파라미터들을 모두 지원합니다:
+
+```python
+from qdrant_odm import CollectionConfig
+from qdrant_client.http import models
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(
+        # 샤딩 및 복제 (Sharding & Replication)
+        shard_number=2,
+        replication_factor=3,
+        write_consistency_factor=2,
+        
+        # 페이로드 및 HNSW 설정
+        on_disk_payload=True,
+        hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
+        
+        # 옵티마이저 설정
+        optimizers_config=models.OptimizersConfigDiff(deleted_threshold=0.2),
+        
+        # 양자화 설정 (Quantization)
+        quantization_config=models.BinaryQuantization(
+            binary=models.BinaryQuantizationConfig(always_ram=True)
+        ),
+    )
+```
 
 ---
 

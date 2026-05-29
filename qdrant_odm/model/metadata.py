@@ -1,6 +1,8 @@
 from typing import Literal
 from dataclasses import dataclass, field
 
+from qdrant_client.http import models
+
 from qdrant_odm.model.fields import PayloadFieldInfo, SparseVectorFieldInfo, VectorFieldInfo
 
 CollectionModeLiteral = Literal["global", "multitenant"]
@@ -13,6 +15,13 @@ class CollectionConfig:
     """
 
     mode: CollectionModeLiteral = "global"
+    quantization_config: models.QuantizationConfig | None = None
+    on_disk_payload: bool | None = None
+    hnsw_config: models.HnswConfigDiff | None = None
+    optimizers_config: models.OptimizersConfigDiff | None = None
+    shard_number: int | None = None
+    replication_factor: int | None = None
+    write_consistency_factor: int | None = None
 
 
 @dataclass(slots=True)

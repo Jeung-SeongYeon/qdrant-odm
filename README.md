@@ -196,32 +196,69 @@ class Document(QdrantModel):
 
 ---
 
-# 📌 Collection Modes
+# 📌 Collection Configuration
 
-## Global (default)
+You can configure collection-level parameters using `__collection_config__`.
 
+## Modes
+
+### Global (default)
 ```python
-__collection_config__ = CollectionConfig(mode="global")
+from qdrant_odm import CollectionConfig
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(mode="global")
 ```
 
-## Multitenant
-
+### Multitenant
 ```python
 from qdrant_odm import CollectionConfig, KeywordIndexOptions
 
-__collection_config__ = CollectionConfig(mode="multitenant")
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(mode="multitenant")
 
-tenant_id: str = PayloadField(
-    index="keyword",
-    keyword=KeywordIndexOptions(is_tenant=True)
-)
+    tenant_id: str = PayloadField(
+        index="keyword",
+        keyword=KeywordIndexOptions(is_tenant=True)
+    )
 ```
 
-### Rules
-
+#### Rules
 - Exactly ONE tenant index
-- Must be keyword
+- Must be keyword type
 - Must set `is_tenant=True`
+
+## Advanced Parameters
+
+`CollectionConfig` supports all Qdrant-native collection configuration parameters, which are applied during collection creation (`sync_schema`):
+
+```python
+from qdrant_odm import CollectionConfig
+from qdrant_client.http import models
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+    __collection_config__ = CollectionConfig(
+        # Sharding & Replication
+        shard_number=2,
+        replication_factor=3,
+        write_consistency_factor=2,
+        
+        # Payload & HNSW config
+        on_disk_payload=True,
+        hnsw_config=models.HnswConfigDiff(m=16, ef_construct=100),
+        
+        # Optimizers
+        optimizers_config=models.OptimizersConfigDiff(deleted_threshold=0.2),
+        
+        # Quantization
+        quantization_config=models.BinaryQuantization(
+            binary=models.BinaryQuantizationConfig(always_ram=True)
+        ),
+    )
+```
 
 ---
 

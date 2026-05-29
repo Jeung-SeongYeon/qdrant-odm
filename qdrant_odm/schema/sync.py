@@ -103,10 +103,19 @@ class SchemaManager:
         """
         for operation in await self.plan_sync(model):
             if operation.operation == "create_collection":
+                meta = model.schema_definition()
+
                 await self.client.create_collection(
                     collection_name=model.collection_name(),
                     vectors_config=self._build_vectors_config(model),
                     sparse_vectors_config=self._build_sparse_vectors_config(model),
+                    quantization_config=meta.collection_config.quantization_config,
+                    on_disk_payload=meta.collection_config.on_disk_payload,
+                    hnsw_config=meta.collection_config.hnsw_config,
+                    optimizers_config=meta.collection_config.optimizers_config,
+                    shard_number=meta.collection_config.shard_number,
+                    replication_factor=meta.collection_config.replication_factor,
+                    write_consistency_factor=meta.collection_config.write_consistency_factor,
                 )
             if operation.operation == "create_payload_index":
                 field_name = operation.detail

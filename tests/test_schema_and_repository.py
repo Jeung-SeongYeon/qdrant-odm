@@ -7,6 +7,7 @@ import pytest
 from qdrant_client.http import models
 
 from qdrant_odm import (
+    CollectionConfig,
     HybridSearchQuery,
     PayloadField,
     QdrantModel,
@@ -146,3 +147,44 @@ async def test_upsert_many_chunking() -> None:
     await repository.upsert_many(items, batch_size=2)
 
     assert client.upsert.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_schema_sync_with_custom_collection_config() -> None:
+    quantization = models.BinaryQuantization(binary=models.BinaryQuantizationConfig(always_ram=True))
+    hnsw = models.HnswConfigDiff(m=16, ef_construct=100)
+    optimizers = models.OptimizersConfigDiff(deleted_threshold=0.2)
+
+    class CustomConfigDoc(QdrantModel):
+        __collection__ = "custom_config_docs"
+        __collection_config__ = CollectionConfig(
+            quantization_config=quantization,
+            on_disk_payload=True,
+            hnsw_config=hnsw,
+            optimizers_config=optimizers,
+            shard_number=2,
+            replication_factor=3,
+            write_consistency_factor=2,
+        )
+        id: UUID
+        title: str = PayloadField(index="keyword")
+        dense = VectorField(name="content_dense", size=4, distance="Cosine")
+
+    client = AsyncMock()
+    client.collection_exists.return_value = False
+    manager = SchemaManager(client)
+
+    await manager.sync(CustomConfigDoc)
+
+    client.create_collection.assert_called_once_with(
+        collection_name="custom_config_docs",
+        vectors_config={"content_dense": models.VectorParams(size=4, distance=models.Distance.COSINE, on_disk=None)},
+        sparse_vectors_config={},
+        quantization_config=quantization,
+        on_disk_payload=True,
+        hnsw_config=hnsw,
+        optimizers_config=optimizers,
+        shard_number=2,
+        replication_factor=3,
+        write_consistency_factor=2,
+    )
