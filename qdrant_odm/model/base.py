@@ -153,13 +153,13 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
                 f"{cls.__name__}.{id_field} must be of type UUID or int (got {annotation!r})"
             )
 
-        dynamic_payload_fields: set[str] = set()
+        dynamic_payload_fields: dict[str, Any] = {}
         payload_fields: dict[str, PayloadFieldInfo] = {}
         for field_name, field_info in cls.model_fields.items():
             if field_name == id_field:
                 continue
             if isinstance(field_info.default, DynamicPayloadField):
-                dynamic_payload_fields.add(field_name)
+                dynamic_payload_fields[field_name] = field_info.annotation
                 continue
             json_schema_extra = field_info.json_schema_extra or {}
             payload_meta = json_schema_extra.get("qdrant_payload")
@@ -177,7 +177,8 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
 
         for attr_name, attr_value in cls.__dict__.items():
             if isinstance(attr_value, DynamicPayloadField):
-                dynamic_payload_fields.add(attr_name)
+                annotation = cls.__annotations__.get(attr_name, dict[str, Any])
+                dynamic_payload_fields[attr_name] = annotation
             elif isinstance(attr_value, VectorField):
                 if attr_value.info.name in named_vectors:
                     raise ModelDefinitionError(
@@ -201,6 +202,11 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         if not vector_fields:
             raise ModelDefinitionError(
                 f"{cls.__name__} must define at least one dense VectorField"
+            )
+        
+        if len(dynamic_payload_fields) > 1:
+            raise ModelDefinitionError(
+                f"{cls.__name__} can define only one DynamicPayloadField"
             )
 
         cls.__odm_meta__ = ModelMetadata(
@@ -255,15 +261,18 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             exclude=exclude,
         )
 
-        for field_name in self.__odm_meta__.dynamic_payload_fields:
+        for field_name, annotation in self.__odm_meta__.dynamic_payload_fields.items():
             value = payload.pop(field_name, None)
 
             if value is None:
                 continue
 
+            if isinstance(value, BaseModel):
+                value = value.model_dump(mode="python")
+
             if not isinstance(value, dict):
                 raise TypeError(
-                    f"Dynamic payload field {field_name!r} must be a dict"
+                    f"Dynamic payload field {field_name!r} must be a dict or BaseModel"
                 )
 
             for key, dynamic_value in value.items():
@@ -293,18 +302,25 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
 
         static_fields = set(cls.__odm_meta__.payload_fields.keys())
 
-        dynamic_field_names = cls.__odm_meta__.dynamic_payload_fields
-
-        dynamic_payload = {}
+        dynamic_items = {}
 
         for key, value in source_payload.items():
             if key in static_fields:
                 data[key] = value
             else:
-                dynamic_payload[key] = value
+                dynamic_items[key] = value
 
-        for dynamic_field_name in dynamic_field_names:
-            data[dynamic_field_name] = dynamic_payload
+        for field_name, annotation in cls.__odm_meta__.dynamic_payload_fields.items():
+            origin = get_origin(annotation)
+
+            if annotation is dict or origin is dict:
+                data[field_name] = dynamic_items
+
+            elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                data[field_name] = annotation.model_validate(dynamic_items)
+
+            else:
+                data[field_name] = dynamic_items
 
         data[cls.__odm_meta__.id_field] = point_id
 

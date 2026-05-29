@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.7)
+# 📦 Qdrant ODM (v0.3.8)
 
 [한국어(Korean)](./README-KR.md)
 
@@ -311,7 +311,11 @@ Supported:
 
 # 📌 Dynamic Payload Field
 
-Use `DynamicPayloadField` to define a schema-less field for storing arbitrary dict data. Values stored in this field are flattened into the final Qdrant payload during serialization and are excluded from ODM schema management (such as index creation or diff checks).
+Use `DynamicPayloadField` to define a schema-less field for storing arbitrary dynamic data. Values stored in this field are flattened into the final Qdrant payload during serialization and are excluded from ODM schema management (such as index creation or diff checks). 
+
+You can annotate the field as either a `dict` or a Pydantic `BaseModel`.
+
+## Dict Example
 
 ```python
 from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
@@ -322,11 +326,9 @@ class Document(QdrantModel):
     id: UUID
     title: str = PayloadField()
     
-    # Define dynamic payload field (must be annotated as dict)
+    # Define dynamic payload field annotated as dict
     extra: dict = DynamicPayloadField()
 ```
-
-### Example
 
 ```python
 doc = Document(
@@ -343,10 +345,50 @@ payload = doc.to_payload()
 # }
 ```
 
-### Constraints
-- The dynamic payload field must be annotated as `dict`.
-- Keys in the dynamic dictionary must not conflict with other static payload fields. If a conflict occurs during serialization, a `ValueError` is raised.
-- Values must be a dictionary. If not, a `TypeError` is raised.
+## BaseModel Example
+
+You can also use a Pydantic `BaseModel` to enforce schema constraints on your dynamic payload while still flattening it:
+
+```python
+from pydantic import BaseModel
+from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
+
+class MetadataExtra(BaseModel):
+    tags: list[str]
+    views: int
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+
+    id: UUID
+    title: str = PayloadField()
+    extra: MetadataExtra = DynamicPayloadField()
+```
+
+```python
+doc = Document(
+    id=uuid4(),
+    title="BaseModel payload",
+    extra=MetadataExtra(tags=["ai", "rag"], views=42)
+)
+
+payload = doc.to_payload()
+# {
+#     "title": "BaseModel payload",
+#     "tags": ["ai", "rag"],
+#     "views": 42
+# }
+
+# Automatically reconstructed back into MetadataExtra instance upon from_point
+restored = Document.from_point(point_id=doc.id, payload=payload)
+print(restored.extra)  # MetadataExtra(tags=['ai', 'rag'], views=42)
+```
+
+## Constraints
+- A model class can define **only one** `DynamicPayloadField`.
+- The field must be annotated as `dict` (or `dict[str, Any]`, etc.) or a Pydantic `BaseModel` subclass.
+- Keys in the dynamic payload must not conflict with other static payload fields in the model. If a conflict occurs during serialization, a `ValueError` is raised.
+- Values must be a dictionary or a `BaseModel` instance. If not, a `TypeError` is raised.
 
 ---
 

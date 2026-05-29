@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from qdrant_odm import DynamicPayloadField, PayloadField, QdrantModel, VectorField
+from qdrant_odm import DynamicPayloadField, ModelDefinitionError, PayloadField, QdrantModel, VectorField
 from qdrant_odm.query import ComparisonExpr, LogicalExpr
 import pytest
 
@@ -73,7 +73,7 @@ def test_dynamic_payload_field() -> None:
     # 3. Type verification (must be dict)
     doc_invalid = DynamicDoc(id=uuid4(), title="hello", extra={"ok": 1})
     doc_invalid.extra = "not a dict"
-    with pytest.raises(TypeError, match="Dynamic payload field 'extra' must be a dict"):
+    with pytest.raises(TypeError, match="Dynamic payload field 'extra' must be a dict or BaseModel"):
         doc_invalid.to_payload()
 
     # 4. Conflict verification
@@ -91,3 +91,49 @@ def test_dynamic_payload_field() -> None:
     assert restored.id == point_id
     assert restored.title == "hello"
     assert restored.extra == {"custom_field": 123, "another": "val"}
+
+
+def test_dynamic_payload_field_basemodel_and_limit() -> None:
+    from pydantic import BaseModel
+
+    class MetadataExtra(BaseModel):
+        tags: list[str]
+        rating: float
+
+    class DynamicModelWithBaseModel(QdrantModel):
+        __collection__ = "dynamic_bm_docs"
+        id: UUID
+        title: str = PayloadField()
+        extra: MetadataExtra = DynamicPayloadField()
+        dense = VectorField(name="content_dense", size=4, distance="Cosine")
+
+    # 1. Serialization verification with BaseModel
+    extra_data = MetadataExtra(tags=["ai", "database"], rating=4.9)
+    doc = DynamicModelWithBaseModel(
+        id=uuid4(),
+        title="BaseModel dynamic payload",
+        extra=extra_data,
+    )
+    payload = doc.to_payload()
+    assert "extra" not in payload
+    assert payload["title"] == "BaseModel dynamic payload"
+    assert payload["tags"] == ["ai", "database"]
+    assert payload["rating"] == 4.9
+
+    # 2. Deserialization verification with BaseModel
+    point_id = uuid4()
+    restored = DynamicModelWithBaseModel.from_point(point_id=point_id, payload=payload)
+    assert restored.id == point_id
+    assert restored.title == "BaseModel dynamic payload"
+    assert isinstance(restored.extra, MetadataExtra)
+    assert restored.extra.tags == ["ai", "database"]
+    assert restored.extra.rating == 4.9
+
+    # 3. Limit of one DynamicPayloadField verification
+    with pytest.raises(ModelDefinitionError, match="can define only one DynamicPayloadField"):
+        class InvalidDoubleDynamicModel(QdrantModel):
+            __collection__ = "invalid_docs"
+            id: UUID
+            extra1: dict = DynamicPayloadField()
+            extra2: dict = DynamicPayloadField()
+            dense = VectorField(name="content_dense", size=4, distance="Cosine")

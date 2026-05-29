@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.7)
+# 📦 Qdrant ODM (v0.3.8)
 
 [English](./README.md)
 
@@ -311,6 +311,10 @@ page: int = PayloadField(
 
 `DynamicPayloadField`를 사용하면 임의의 key-value 딕셔너리 데이터를 저장할 수 있는 스키마리스(schema-less) 필드를 정의할 수 있습니다. 이 필드에 저장된 값은 직렬화 시 Qdrant 페이로드의 최상위(root) 레벨로 평탄화(Flatten)되어 저장되며, 인덱스 자동 생성이나 스키마 비교(diff) 등 ODM의 스키마 관리 대상에서 제외됩니다.
 
+필드의 타입은 `dict` 혹은 Pydantic `BaseModel`로 어노테이션할 수 있습니다.
+
+## Dict 사용 예시
+
 ```python
 from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
 
@@ -320,11 +324,9 @@ class Document(QdrantModel):
     id: UUID
     title: str = PayloadField()
     
-    # 동적 페이로드 필드 정의 (반드시 dict 타입 어노테이션 필요)
+    # dict 타입으로 정의된 동적 페이로드 필드
     extra: dict = DynamicPayloadField()
 ```
-
-### 사용 예시
 
 ```python
 doc = Document(
@@ -341,10 +343,50 @@ payload = doc.to_payload()
 # }
 ```
 
-### 제약 사항
-- 동적 페이로드 필드는 반드시 `dict` 타입으로 어노테이션되어야 합니다.
+## BaseModel 사용 예시
+
+Pydantic `BaseModel`을 사용하면 동적 필드에 구조적 스키마 제약을 적용하면서도 Qdrant 페이로드 상에서는 평탄화(Flatten)되도록 구현할 수 있습니다:
+
+```python
+from pydantic import BaseModel
+from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
+
+class MetadataExtra(BaseModel):
+    tags: list[str]
+    views: int
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+
+    id: UUID
+    title: str = PayloadField()
+    extra: MetadataExtra = DynamicPayloadField()
+```
+
+```python
+doc = Document(
+    id=uuid4(),
+    title="BaseModel payload",
+    extra=MetadataExtra(tags=["ai", "rag"], views=42)
+)
+
+payload = doc.to_payload()
+# {
+#     "title": "BaseModel payload",
+#     "tags": ["ai", "rag"],
+#     "views": 42
+# }
+
+# from_point 역직렬화 시 자동으로 MetadataExtra 인스턴스로 복원됩니다.
+restored = Document.from_point(point_id=doc.id, payload=payload)
+print(restored.extra)  # MetadataExtra(tags=['ai', 'rag'], views=42)
+```
+
+## 제약 사항
+- 하나의 모델 클래스에서는 **최대 1개**의 `DynamicPayloadField`만 정의할 수 있습니다.
+- 필드는 반드시 `dict` (또는 `dict[str, Any]` 등) 혹은 Pydantic `BaseModel` 서브클래스 형태로 타입 어노테이션되어야 합니다.
 - 동적 필드 내의 key는 모델의 다른 정적 필드명(예: `title`)과 겹치면 안 됩니다. 직렬화(`to_payload()`) 시 중복된 key가 존재하면 `ValueError`가 발생합니다.
-- 동적 필드에 설정되는 값은 반드시 딕셔너리(`dict`) 형태여야 합니다. 그렇지 않으면 `TypeError`가 발생합니다.
+- 동적 필드에 설정되는 값은 반드시 딕셔너리(`dict`) 혹은 `BaseModel` 인스턴스 형태여야 합니다. 그렇지 않으면 `TypeError`가 발생합니다.
 
 ---
 
