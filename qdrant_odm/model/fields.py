@@ -19,6 +19,16 @@ PayloadSchemaLiteral = Literal[
 
 TokenizerLiteral = Literal["word", "whitespace", "prefix", "multilingual"]
 
+class DynamicPayloadField:
+    """
+    Marker field for dynamic payload passthrough.
+
+    Values stored in this field are flattened into the final Qdrant payload
+    during serialization and are excluded from ODM schema management.
+    """
+
+    def __init__(self) -> None:
+        pass
 
 @dataclass(slots=True)
 class KeywordIndexOptions:

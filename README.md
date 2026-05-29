@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.5)
+# 📦 Qdrant ODM (v0.3.6)
 
 [한국어(Korean)](./README-KR.md)
 
@@ -306,6 +306,47 @@ Supported:
 - datetime
 - text
 - uuid
+
+---
+
+# 📌 Dynamic Payload Field
+
+Use `DynamicPayloadField` to define a schema-less field for storing arbitrary dict data. Values stored in this field are flattened into the final Qdrant payload during serialization and are excluded from ODM schema management (such as index creation or diff checks).
+
+```python
+from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+
+    id: UUID
+    title: str = PayloadField()
+    
+    # Define dynamic payload field (must be annotated as dict)
+    extra: dict = DynamicPayloadField()
+```
+
+### Example
+
+```python
+doc = Document(
+    id=uuid4(),
+    title="Schema-less payload",
+    extra={"tags": ["ai", "rag"], "views": 42}
+)
+
+payload = doc.to_payload()
+# {
+#     "title": "Schema-less payload",
+#     "tags": ["ai", "rag"],
+#     "views": 42
+# }
+```
+
+### Constraints
+- The dynamic payload field must be annotated as `dict`.
+- Keys in the dynamic dictionary must not conflict with other static payload fields. If a conflict occurs during serialization, a `ValueError` is raised.
+- Values must be a dictionary. If not, a `TypeError` is raised.
 
 ---
 

@@ -7,6 +7,7 @@ from qdrant_odm.exceptions import ModelDefinitionError
 from qdrant_odm.model.fields import (
     BoolIndexOptions,
     DatetimeIndexOptions,
+    DynamicPayloadField,
     FloatIndexOptions,
     GeoIndexOptions,
     IntegerIndexOptions,
@@ -83,7 +84,13 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
     __collection_config__: ClassVar[CollectionConfig] = CollectionConfig()
     __odm_meta__: ClassVar[ModelMetadata]
 
-    model_config = ConfigDict(ignored_types=(VectorField, SparseVectorField))
+    model_config = ConfigDict(
+        ignored_types=(
+            VectorField,
+            SparseVectorField,
+            DynamicPayloadField,
+        )
+    )
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -146,9 +153,13 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
                 f"{cls.__name__}.{id_field} must be of type UUID or int (got {annotation!r})"
             )
 
+        dynamic_payload_fields: set[str] = set()
         payload_fields: dict[str, PayloadFieldInfo] = {}
         for field_name, field_info in cls.model_fields.items():
             if field_name == id_field:
+                continue
+            if isinstance(field_info.default, DynamicPayloadField):
+                dynamic_payload_fields.add(field_name)
                 continue
             json_schema_extra = field_info.json_schema_extra or {}
             payload_meta = json_schema_extra.get("qdrant_payload")
@@ -165,7 +176,9 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         named_vectors: set[str] = set()
 
         for attr_name, attr_value in cls.__dict__.items():
-            if isinstance(attr_value, VectorField):
+            if isinstance(attr_value, DynamicPayloadField):
+                dynamic_payload_fields.add(attr_name)
+            elif isinstance(attr_value, VectorField):
                 if attr_value.info.name in named_vectors:
                     raise ModelDefinitionError(
                         f"{cls.__name__} has duplicated vector name {attr_value.info.name!r}"
@@ -196,6 +209,7 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             collection_config=collection_config,
             tenant_field=tenant_field,
             payload_fields=payload_fields,
+            dynamic_payload_fields=dynamic_payload_fields,
             vector_fields=vector_fields,
             sparse_vector_fields=sparse_vector_fields,
         )
@@ -234,7 +248,33 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
         from the payload in Qdrant.
         """
         exclude = {self.__odm_meta__.id_field}
-        return self.model_dump(mode="python", by_alias=True, exclude=exclude)
+
+        payload = self.model_dump(
+            mode="python",
+            by_alias=True,
+            exclude=exclude,
+        )
+
+        for field_name in self.__odm_meta__.dynamic_payload_fields:
+            value = payload.pop(field_name, None)
+
+            if value is None:
+                continue
+
+            if not isinstance(value, dict):
+                raise TypeError(
+                    f"Dynamic payload field {field_name!r} must be a dict"
+                )
+
+            for key, dynamic_value in value.items():
+                if key in payload:
+                    raise ValueError(
+                        f"Dynamic payload key {key!r} conflicts with existing payload field"
+                    )
+
+                payload[key] = dynamic_value
+
+        return payload
 
     @classmethod
     def from_point(cls, *, point_id: Any, payload: dict[str, Any] | None) -> "QdrantModel":

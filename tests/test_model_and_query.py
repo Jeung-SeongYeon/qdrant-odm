@@ -1,8 +1,9 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from qdrant_odm import PayloadField, QdrantModel, VectorField
+from qdrant_odm import DynamicPayloadField, PayloadField, QdrantModel, VectorField
 from qdrant_odm.query import ComparisonExpr, LogicalExpr
+import pytest
 
 
 class Document(QdrantModel):
@@ -41,3 +42,45 @@ def test_filter_expression_building() -> None:
     assert isinstance(expr, LogicalExpr)
     assert len(expr.values) == 2
     assert isinstance(expr.values[0], ComparisonExpr)
+
+
+def test_dynamic_payload_field() -> None:
+    class DynamicDoc(QdrantModel):
+        __collection__ = "dynamic_docs"
+        id: UUID
+        title: str = PayloadField()
+        extra: dict = DynamicPayloadField()
+        dense = VectorField(name="content_dense", size=4, distance="Cosine")
+
+    # 1. Metadata verification
+    meta = DynamicDoc.schema_definition()
+    assert "extra" in meta.dynamic_payload_fields
+    assert "extra" not in meta.payload_fields
+    assert "title" in meta.payload_fields
+
+    # 2. Serialization (flattening) verification
+    doc = DynamicDoc(
+        id=uuid4(),
+        title="hello",
+        extra={"custom_field": 123, "another": "val"},
+    )
+    payload = doc.to_payload()
+    assert "extra" not in payload
+    assert payload["title"] == "hello"
+    assert payload["custom_field"] == 123
+    assert payload["another"] == "val"
+
+    # 3. Type verification (must be dict)
+    doc_invalid = DynamicDoc(id=uuid4(), title="hello", extra={"ok": 1})
+    doc_invalid.extra = "not a dict"
+    with pytest.raises(TypeError, match="Dynamic payload field 'extra' must be a dict"):
+        doc_invalid.to_payload()
+
+    # 4. Conflict verification
+    doc_conflict = DynamicDoc(
+        id=uuid4(),
+        title="hello",
+        extra={"title": "conflict"},
+    )
+    with pytest.raises(ValueError, match="Dynamic payload key 'title' conflicts with existing payload field"):
+        doc_conflict.to_payload()

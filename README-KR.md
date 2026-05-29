@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.5)
+# 📦 Qdrant ODM (v0.3.6)
 
 [English](./README.md)
 
@@ -304,6 +304,47 @@ page: int = PayloadField(
 - datetime
 - text
 - uuid
+
+---
+
+# 📌 Dynamic Payload Field (동적 페이로드 필드)
+
+`DynamicPayloadField`를 사용하면 임의의 key-value 딕셔너리 데이터를 저장할 수 있는 스키마리스(schema-less) 필드를 정의할 수 있습니다. 이 필드에 저장된 값은 직렬화 시 Qdrant 페이로드의 최상위(root) 레벨로 평탄화(Flatten)되어 저장되며, 인덱스 자동 생성이나 스키마 비교(diff) 등 ODM의 스키마 관리 대상에서 제외됩니다.
+
+```python
+from qdrant_odm import QdrantModel, PayloadField, DynamicPayloadField
+
+class Document(QdrantModel):
+    __collection__ = "documents"
+
+    id: UUID
+    title: str = PayloadField()
+    
+    # 동적 페이로드 필드 정의 (반드시 dict 타입 어노테이션 필요)
+    extra: dict = DynamicPayloadField()
+```
+
+### 사용 예시
+
+```python
+doc = Document(
+    id=uuid4(),
+    title="Schema-less payload",
+    extra={"tags": ["ai", "rag"], "views": 42}
+)
+
+payload = doc.to_payload()
+# {
+#     "title": "Schema-less payload",
+#     "tags": ["ai", "rag"],
+#     "views": 42
+# }
+```
+
+### 제약 사항
+- 동적 페이로드 필드는 반드시 `dict` 타입으로 어노테이션되어야 합니다.
+- 동적 필드 내의 key는 모델의 다른 정적 필드명(예: `title`)과 겹치면 안 됩니다. 직렬화(`to_payload()`) 시 중복된 key가 존재하면 `ValueError`가 발생합니다.
+- 동적 필드에 설정되는 값은 반드시 딕셔너리(`dict`) 형태여야 합니다. 그렇지 않으면 `TypeError`가 발생합니다.
 
 ---
 

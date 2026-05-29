@@ -50,5 +50,6 @@ class ModelMetadata:
     collection_config: CollectionConfig = field(default_factory=CollectionConfig)
     tenant_field: str | None = None
     payload_fields: dict[str, PayloadFieldInfo] = field(default_factory=dict)
+    dynamic_payload_fields: set[str] = field(default_factory=set)
     vector_fields: dict[str, VectorFieldInfo] = field(default_factory=dict)
     sparse_vector_fields: dict[str, SparseVectorFieldInfo] = field(default_factory=dict)
