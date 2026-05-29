@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.4)
+# 📦 Qdrant ODM (v0.3.5)
 
 [English](./README.md)
 
