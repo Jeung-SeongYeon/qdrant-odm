@@ -289,8 +289,25 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             A validated model instance with the point id injected into the configured id field.
         """
         source_payload = payload or {}
-        data = dict(source_payload)
+        data = {}
+
+        static_fields = set(cls.__odm_meta__.payload_fields.keys())
+
+        dynamic_field_names = cls.__odm_meta__.dynamic_payload_fields
+
+        dynamic_payload = {}
+
+        for key, value in source_payload.items():
+            if key in static_fields:
+                data[key] = value
+            else:
+                dynamic_payload[key] = value
+
+        for dynamic_field_name in dynamic_field_names:
+            data[dynamic_field_name] = dynamic_payload
+
         data[cls.__odm_meta__.id_field] = point_id
+
         return cls.model_validate(data)
 
 

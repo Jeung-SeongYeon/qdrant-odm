@@ -84,3 +84,10 @@ def test_dynamic_payload_field() -> None:
     )
     with pytest.raises(ValueError, match="Dynamic payload key 'title' conflicts with existing payload field"):
         doc_conflict.to_payload()
+
+    # 5. Deserialization (reconstruction) verification
+    point_id = uuid4()
+    restored = DynamicDoc.from_point(point_id=point_id, payload=payload)
+    assert restored.id == point_id
+    assert restored.title == "hello"
+    assert restored.extra == {"custom_field": 123, "another": "val"}
