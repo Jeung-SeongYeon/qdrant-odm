@@ -413,8 +413,10 @@ class QdrantRepository(Generic[T]):
         """
         Execute a hybrid search combining dense and sparse vectors.
 
-        If query.fusion_k is None, native Qdrant prefetching and fusion query are used.
-        Otherwise, legacy Python-side Reciprocal Rank Fusion (RRF) is executed.
+        Supports:
+        - Native Qdrant DBSF (when fusion="DBSF")
+        - Native Qdrant RRF (when fusion="RRF" and fusion_k is None)
+        - Legacy Python RRF (when fusion="RRF" and fusion_k is not None)
 
         Args:
             query:
@@ -423,7 +425,31 @@ class QdrantRepository(Generic[T]):
         Returns:
             A fused list of search hits.
         """
-        if query.fusion_k is None:
+        fusion_type = query.fusion.upper()
+
+        if fusion_type == "DBSF":
+            dense_prefetch = Prefetch(
+                query=query.dense_vector,
+                using=query.dense_using,
+                limit=query.limit,
+            )
+            sparse_prefetch = Prefetch(
+                query=query.sparse_vector,
+                using=query.sparse_using,
+                limit=query.limit,
+            )
+
+            return await self.query(
+                query=models.FusionQuery(fusion=models.Fusion.DBSF),
+                prefetch=[dense_prefetch, sparse_prefetch],
+                filter=query.filter,
+                limit=query.limit,
+                with_payload=query.with_payload,
+                with_vectors=query.with_vectors,
+                score_threshold=query.score_threshold,
+                tenant=tenant,
+            )
+        elif query.fusion_k is None:
             dense_prefetch = Prefetch(
                 query=query.dense_vector,
                 using=query.dense_using,

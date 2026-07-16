@@ -1,4 +1,4 @@
-from typing import Any, Union
+from typing import Any, Union, Literal
 from pydantic import BaseModel, Field
 from qdrant_client.http import models
 
@@ -104,6 +104,7 @@ class HybridSearchQuery(BaseModel):
     with_vectors: bool = False
     score_threshold: float | None = None
     fusion_k: int | None = None
+    fusion: Literal["RRF", "DBSF"] = "RRF"
 
     model_config = {"arbitrary_types_allowed": True}
 

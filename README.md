@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.9)
+# 📦 Qdrant ODM (v0.3.10)
 
 [한국어(Korean)](./README-KR.md)
 
@@ -498,12 +498,23 @@ SparseVectorInput(indices=[...], values=[...])
 ## Hybrid Search
 
 ```python
-await repo.search_hybrid(HybridSearchQuery(...))
+await repo.search_hybrid(
+    HybridSearchQuery(
+        dense_using="content_dense",
+        dense_vector=[0.1, 0.2],
+        sparse_using="content_sparse",
+        sparse_vector=SparseVectorInput(indices=[0], values=[1.0]),
+        fusion="RRF",        # "RRF" (default) or "DBSF"
+        fusion_k=None,       # Optional parameter for Python RRF
+        limit=10,
+    )
+)
 ```
 
 ### Fusion Modes:
-- **Native Qdrant Fusion (`fusion_k=None`)**: When `fusion_k` is not specified or set to `None`, `qdrant-odm` executes native hybrid search inside the Qdrant DB engine using `Prefetch` and `FusionQuery(RRF)` in a single database RTT.
-- **Legacy Python Fusion (`fusion_k=int`)**: When `fusion_k` is specified as an integer (e.g., `60`), `qdrant-odm` executes dense and sparse searches separately and fuses them in Python memory using the specified `k` smoothing constant.
+- **Native Qdrant DBSF (`fusion="DBSF"`)**: Always routes natively to Qdrant's fast DBSF fusion query (`models.Fusion.DBSF`) via prefetching in a single DB RTT.
+- **Native Qdrant RRF (`fusion="RRF"`, `fusion_k=None`)**: Routes natively to Qdrant's RRF fusion query (`models.Fusion.RRF`) via prefetching in a single DB RTT.
+- **Legacy Python RRF (`fusion="RRF"`, `fusion_k=int`)**: Executes separate dense and sparse searches and fuses them in local Python memory using the provided `k` parameter.
 
 ---
 

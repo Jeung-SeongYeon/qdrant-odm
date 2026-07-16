@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.9)
+# 📦 Qdrant ODM (v0.3.10)
 
 [English](./README.md)
 
@@ -496,12 +496,23 @@ SparseVectorInput(indices=[...], values=[...])
 ## Hybrid 검색
 
 ```python
-await repo.search_hybrid(HybridSearchQuery(...))
+await repo.search_hybrid(
+    HybridSearchQuery(
+        dense_using="content_dense",
+        dense_vector=[0.1, 0.2],
+        sparse_using="content_sparse",
+        sparse_vector=SparseVectorInput(indices=[0], values=[1.0]),
+        fusion="RRF",        # "RRF" (기본값) 또는 "DBSF"
+        fusion_k=None,       # Python RRF 사용 시 적용할 k 값
+        limit=10,
+    )
+)
 ```
 
 ### Fusion 모드 분기:
-- **Native Qdrant Fusion (`fusion_k=None`)**: `fusion_k`를 지정하지 않거나 `None`으로 설정한 경우, `Prefetch`와 `FusionQuery(RRF)`를 활용해 Qdrant DB 엔진 내부에서 RRF 병합을 수행합니다 (단일 네트워크 RTT로 처리).
-- **Legacy Python Fusion (`fusion_k=int`)**: `fusion_k`에 정수값(예: `60`)을 지정한 경우, Dense 검색과 Sparse 검색을 각각 개별적으로 요청한 뒤 로컬 Python 메모리 상에서 RRF 연산을 수행하여 정렬합니다.
+- **Native Qdrant DBSF (`fusion="DBSF"`)**: 항상 Qdrant의 네이티브 DBSF 융합 쿼리(`models.Fusion.DBSF`)를 호출하여 단일 RTT로 고속 하이브리드 검색을 수행합니다.
+- **Native Qdrant RRF (`fusion="RRF"`, `fusion_k=None`)**: Qdrant의 네이티브 RRF 융합 쿼리(`models.Fusion.RRF`)를 호출하여 단일 RTT로 하이브리드 검색을 수행합니다.
+- **Legacy Python RRF (`fusion="RRF"`, `fusion_k=int`)**: Dense 및 Sparse 검색을 독립적으로 개별 실행한 후, 로컬 Python 메모리 상에서 주어진 `k` 파라미터 값으로 RRF 병합 연산을 수행합니다.
 
 ---
 

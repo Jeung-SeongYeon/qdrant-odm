@@ -537,3 +537,38 @@ async def test_hybrid_search_native_route_no_python_rrf() -> None:
     client.query_points.assert_called_once()
     _, kwargs = client.query_points.call_args
     assert isinstance(kwargs["query"], models.FusionQuery)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_native_dbsf() -> None:
+    client = AsyncMock()
+    mock_point = models.ScoredPoint(
+        id=uuid4(),
+        version=1,
+        score=0.99,
+        payload={"title": "Native DBSF result", "created_at": "2026-01-01T00:00:00Z"},
+        vector=None,
+    )
+    client.query_points.return_value = models.QueryResponse(points=[mock_point])
+
+    repository = QdrantRepository(client, Document)
+
+    from unittest.mock import patch
+    with patch.object(repository, "_fuse_hits_rrf") as mock_fuse:
+        await repository.search_hybrid(
+            HybridSearchQuery(
+                dense_using="content_dense",
+                dense_vector=[0.1, 0.2, 0.3, 0.4],
+                sparse_using="content_sparse",
+                sparse_vector=SparseVectorInput(indices=[1], values=[1.0]),
+                limit=3,
+                fusion="DBSF",
+            )
+        )
+
+        mock_fuse.assert_not_called()
+
+    client.query_points.assert_called_once()
+    _, kwargs = client.query_points.call_args
+    assert isinstance(kwargs["query"], models.FusionQuery)
+    assert kwargs["query"].fusion == models.Fusion.DBSF
