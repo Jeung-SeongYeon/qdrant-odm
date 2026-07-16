@@ -1,4 +1,4 @@
-from typing import Any, Generic, Sequence, TypeVar
+from typing import Any, Generic, Sequence, TypeVar, cast
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
@@ -8,7 +8,7 @@ from qdrant_odm.model.base import QdrantModel
 from qdrant_odm.query.compiler import FilterCompiler
 from qdrant_odm.query.expressions import FieldExpr
 from qdrant_odm.query.filters import FilterExpression
-from qdrant_odm.query.search import HybridSearchQuery, SearchQuery, SparseVectorInput
+from qdrant_odm.query.search import HybridSearchQuery, Prefetch, SearchQuery, SparseVectorInput
 from qdrant_odm.repository.base import DEFAULT_RETRIEVE_CHUNK_SIZE, DEFAULT_UPSERT_BATCH_SIZE
 from qdrant_odm.repository.result import SearchHit
 from qdrant_odm.types import ScrollPage
@@ -71,7 +71,7 @@ class QdrantRepository(Generic[T]):
         if not records:
             return None
         record = records[0]
-        return self.model.from_point(point_id=record.id, payload=record.payload)
+        return cast(T, self.model.from_point(point_id=record.id, payload=record.payload))
 
     async def get_many(
         self,
@@ -105,7 +105,7 @@ class QdrantRepository(Generic[T]):
                 with_vectors=False,
             )
             results.extend(
-                self.model.from_point(point_id=record.id, payload=record.payload) for record in records
+                cast(T, self.model.from_point(point_id=record.id, payload=record.payload)) for record in records
             )
         return results
 
@@ -291,8 +291,94 @@ class QdrantRepository(Generic[T]):
             with_vectors=with_vectors,
             limit=limit,
         )
-        items = [self.model.from_point(point_id=point.id, payload=point.payload) for point in points]
+        items = [cast(T, self.model.from_point(point_id=point.id, payload=point.payload)) for point in points]
         return ScrollPage(items=items, next_offset=next_offset)
+
+    async def query(
+        self,
+        *,
+        query: Any | None = None,
+        using: str | None = None,
+        prefetch: Any | None = None,
+        filter: FilterExpression | None = None,
+        limit: int = 10,
+        offset: int | None = None,
+        with_payload: bool | Sequence[str] = True,
+        with_vectors: bool | Sequence[str] = False,
+        score_threshold: float | None = None,
+        tenant: Any | None = None,
+        **kwargs: Any,
+    ) -> list[SearchHit[T]]:
+        """
+        Execute a query using the unified Qdrant query_points API.
+
+        This method supports:
+        - Dense and sparse similarity search
+        - Recommendation, discovery, and context search
+        - Hybrid search with prefetch queries and FusionQuery
+
+        Args:
+            query: The query to run (vector, SparseVector, Query object, etc.).
+            using: Name of the vector to use for query.
+            prefetch: Sub-queries to execute first (Prefetch or list of Prefetch).
+            filter: Optional filter expression.
+            limit: Maximum number of results to return.
+            offset: Pagination offset.
+            with_payload: Payload fields to include.
+            with_vectors: Vector fields to include.
+            score_threshold: Minimum similarity score.
+            tenant: Tenant identifier for multitenant filtering.
+            **kwargs: Additional parameters passed to client.query_points.
+
+        Returns:
+            A list of typed SearchHit instances.
+        """
+        merged_filter = self._merge_filter(filter, tenant)
+        query_filter = FilterCompiler.compile(merged_filter, model=self.model)
+
+        # Resolve prefetch parameter (supports Prefetch wrappers and native Prefetch objects)
+        resolved_prefetch = None
+        if prefetch is not None:
+            if isinstance(prefetch, list):
+                resolved_prefetch = [
+                    p.to_qdrant(model=self.model) if hasattr(p, "to_qdrant") else p
+                    for p in prefetch
+                ]
+            else:
+                resolved_prefetch = (
+                    prefetch.to_qdrant(model=self.model)
+                    if hasattr(prefetch, "to_qdrant")
+                    else prefetch
+                )
+
+        search_result = await self.client.query_points(
+            collection_name=self.meta.collection_name,
+            query=query,
+            using=using,
+            prefetch=resolved_prefetch,
+            query_filter=query_filter,
+            limit=limit,
+            offset=offset,
+            with_payload=with_payload,
+            with_vectors=with_vectors,
+            score_threshold=score_threshold,
+            **kwargs,
+        )
+
+        hits: list[SearchHit[T]] = []
+        for point in search_result.points:
+            payload = dict(point.payload or {})
+            document = cast(T, self.model.from_point(point_id=point.id, payload=payload))
+            hits.append(
+                SearchHit[T](
+                    id=point.id,
+                    score=float(point.score),
+                    payload=payload,
+                    vectors=cast(Any, point.vector),
+                    document=document,
+                )
+            )
+        return hits
 
     async def search(self, query: SearchQuery, *, tenant: Any | None = None) -> list[SearchHit[T]]:
         """
@@ -306,95 +392,90 @@ class QdrantRepository(Generic[T]):
             A list of typed search hits containing score, payload, optional vectors,
             and the deserialized model instance.
         """
-        merged_filter = self._merge_filter(query.filter, tenant)
-
-        search_result = await self.client.search(
-            collection_name=self.meta.collection_name,
-            query_vector=self._compile_query_vector(query),
-            query_filter=FilterCompiler.compile(merged_filter, model=self.model),
+        raw_query = (
+            query.vector.to_qdrant()
+            if isinstance(query.vector, SparseVectorInput)
+            else query.vector
+        )
+        return await self.query(
+            query=raw_query,
+            using=query.using,
+            filter=query.filter,
             limit=query.limit,
             offset=query.offset,
             with_payload=query.with_payload,
             with_vectors=query.with_vectors,
             score_threshold=query.score_threshold,
+            tenant=tenant,
         )
-
-        hits: list[SearchHit[T]] = []
-        for point in search_result:
-            payload = dict(point.payload or {})
-            document = self.model.from_point(point_id=point.id, payload=payload)
-            hits.append(
-                SearchHit[T](
-                    id=point.id,
-                    score=float(point.score),
-                    payload=payload,
-                    vectors=point.vector,
-                    document=document,
-                )
-            )
-        return hits
 
     async def search_hybrid(self, query: HybridSearchQuery, *, tenant: Any | None = None) -> list[SearchHit[T]]:
         """
-        Execute a hybrid search by combining dense and sparse search results.
+        Execute a hybrid search combining dense and sparse vectors.
 
-        Hybrid retrieval is implemented by:
-        1. running a dense search,
-        2. running a sparse search,
-        3. fusing both ranked lists using reciprocal rank fusion (RRF).
+        If query.fusion_k is None, native Qdrant prefetching and fusion query are used.
+        Otherwise, legacy Python-side Reciprocal Rank Fusion (RRF) is executed.
 
         Args:
             query:
                 The hybrid search query definition.
 
         Returns:
-            A fused list of search hits ranked by reciprocal rank fusion.
+            A fused list of search hits.
         """
-        dense_hits = await self.search(
-            SearchQuery(
+        if query.fusion_k is None:
+            dense_prefetch = Prefetch(
+                query=query.dense_vector,
                 using=query.dense_using,
-                vector=query.dense_vector,
-                filter=query.filter,
                 limit=query.limit,
-                with_payload=query.with_payload,
-                with_vectors=query.with_vectors,
-                score_threshold=query.score_threshold,
-            ),
-            tenant=tenant
-        )
-        sparse_hits = await self.search(
-            SearchQuery(
+            )
+            sparse_prefetch = Prefetch(
+                query=query.sparse_vector,
                 using=query.sparse_using,
-                vector=query.sparse_vector,
+                limit=query.limit,
+            )
+
+            return await self.query(
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
+                prefetch=[dense_prefetch, sparse_prefetch],
                 filter=query.filter,
                 limit=query.limit,
                 with_payload=query.with_payload,
                 with_vectors=query.with_vectors,
                 score_threshold=query.score_threshold,
-            ),
-            tenant=tenant
-        )
-        return self._fuse_hits_rrf(dense_hits=dense_hits, sparse_hits=sparse_hits, limit=query.limit, k=query.fusion_k)
-
-    def _compile_query_vector(
-        self, query: SearchQuery
-    ) -> models.NamedVector | models.NamedSparseVector | list[float]:
-        """
-        Convert a search query vector into the Qdrant client query vector format.
-
-        Dense vectors are wrapped as `NamedVector`, while sparse vectors are wrapped
-        as `NamedSparseVector`.
-
-        Args:
-            query:
-                The search query containing the vector input.
-
-        Returns:
-            A Qdrant-compatible query vector object.
-        """
-        if isinstance(query.vector, SparseVectorInput):
-            return models.NamedSparseVector(name=query.using, vector=query.vector.to_qdrant())
-        return models.NamedVector(name=query.using, vector=query.vector)
+                tenant=tenant,
+            )
+        else:
+            dense_hits = await self.search(
+                SearchQuery(
+                    using=query.dense_using,
+                    vector=query.dense_vector,
+                    filter=query.filter,
+                    limit=query.limit,
+                    with_payload=query.with_payload,
+                    with_vectors=query.with_vectors,
+                    score_threshold=query.score_threshold,
+                ),
+                tenant=tenant,
+            )
+            sparse_hits = await self.search(
+                SearchQuery(
+                    using=query.sparse_using,
+                    vector=query.sparse_vector,
+                    filter=query.filter,
+                    limit=query.limit,
+                    with_payload=query.with_payload,
+                    with_vectors=query.with_vectors,
+                    score_threshold=query.score_threshold,
+                ),
+                tenant=tenant,
+            )
+            return self._fuse_hits_rrf(
+                dense_hits=dense_hits,
+                sparse_hits=sparse_hits,
+                limit=query.limit,
+                k=query.fusion_k,
+            )
 
     def _fuse_hits_rrf(
         self,

@@ -47,6 +47,7 @@ from qdrant_odm.query import (
     HybridSearchQuery,
     LogicalExpr,
     NotExpr,
+    Prefetch,
     SearchQuery,
     SparseVectorInput,
 )
@@ -93,6 +94,7 @@ __all__ = [
     "NotFoundError",
     "PayloadField",
     "PayloadFieldInfo",
+    "Prefetch",
     "QdrantODM",
     "QdrantModel",
     "QdrantODMError",

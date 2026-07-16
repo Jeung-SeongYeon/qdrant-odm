@@ -27,7 +27,7 @@ _ALLOWED_DISTANCE_VALUES = {"Cosine", "Euclid", "Dot", "Manhattan"}
 _ALLOWED_COLLECTION_MODES = {"global", "multitenant"}
 
 
-class QdrantModelMeta(type(BaseModel)):
+class QdrantModelMeta(type(BaseModel)):  # type: ignore[misc]
     """
     Metaclass for Qdrant ODM models.
 
@@ -161,8 +161,10 @@ class QdrantModel(BaseModel, metaclass=QdrantModelMeta):
             if isinstance(field_info.default, DynamicPayloadField):
                 dynamic_payload_fields[field_name] = field_info.annotation
                 continue
-            json_schema_extra = field_info.json_schema_extra or {}
-            payload_meta = json_schema_extra.get("qdrant_payload")
+            json_schema_extra = field_info.json_schema_extra
+            payload_meta = None
+            if isinstance(json_schema_extra, dict):
+                payload_meta = json_schema_extra.get("qdrant_payload")
             if isinstance(payload_meta, PayloadFieldInfo):
                 payload_fields[field_name] = payload_meta
                 continue

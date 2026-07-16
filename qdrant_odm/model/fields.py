@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import Field
 from qdrant_client.http import models
@@ -216,7 +216,7 @@ def PayloadField(
         uuid=uuid,
     )
     json_schema_extra = {"qdrant_payload": payload_info}
-    return Field(default=default, alias=alias, json_schema_extra=json_schema_extra)
+    return Field(default=default, alias=alias, json_schema_extra=cast(Any, json_schema_extra))
 
 
 class VectorField:

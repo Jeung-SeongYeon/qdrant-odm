@@ -7,7 +7,7 @@ from qdrant_odm.query.expressions import (
     NotExpr,
 )
 from qdrant_odm.query.filters import FilterExpression
-from qdrant_odm.query.search import HybridSearchQuery, SearchQuery, SparseVectorInput
+from qdrant_odm.query.search import HybridSearchQuery, Prefetch, SearchQuery, SparseVectorInput
 
 __all__ = [
     "ComparisonExpr",
@@ -18,6 +18,7 @@ __all__ = [
     "HybridSearchQuery",
     "LogicalExpr",
     "NotExpr",
+    "Prefetch",
     "SearchQuery",
     "SparseVectorInput",
 ]

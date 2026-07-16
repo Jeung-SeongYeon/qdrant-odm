@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.8)
+# 📦 Qdrant ODM (v0.3.9)
 
 [한국어(Korean)](./README-KR.md)
 
@@ -450,27 +450,60 @@ page = await repo.scroll()
 
 ---
 
-# 🔍 Search
+# 🔍 Search & Query
 
-## Dense
+`qdrant-odm` supports dense search, sparse search, and the unified Qdrant Query API including Native Hybrid Search and Prefetching.
+
+## Unified Query API
+
+Use the `query()` method on a repository to execute complex queries using Qdrant's unified `query_points` API.
+
+```python
+from qdrant_client.http import models
+from qdrant_odm import Prefetch, SparseVectorInput
+
+# Run query with prefetch and server-side Reciprocal Rank Fusion (RRF)
+results = await repo.query(
+    query=models.FusionQuery(fusion=models.Fusion.RRF),
+    prefetch=[
+        Prefetch(query=[0.1, 0.2, 0.3], using="content_dense", limit=10),
+        Prefetch(query=SparseVectorInput(indices=[1], values=[1.0]), using="content_sparse", limit=10)
+    ],
+    limit=5
+)
+```
+
+## Prefetch Wrapper
+
+You can use the `Prefetch` wrapper class to avoid direct imports of Qdrant Client models. The `Prefetch` wrapper supports:
+- `query`: list of floats, `SparseVectorInput`, Qdrant Native Queries, or nested `Prefetch` wrappers.
+- `using`: named vector key.
+- `filter`: ODM `FilterExpression` (e.g. `Document.title == "test"`).
+- `limit`: query candidate limit.
+- `score_threshold`: minimum similarity score threshold.
+- `prefetch`: nested prefetch queries.
+
+## Dense Search
 
 ```python
 await repo.search(SearchQuery(...))
 ```
 
-## Sparse
+## Sparse Search
 
 ```python
 SparseVectorInput(indices=[...], values=[...])
 ```
 
-## Hybrid
+## Hybrid Search
 
 ```python
 await repo.search_hybrid(HybridSearchQuery(...))
 ```
 
-Uses RRF internally.
+### Fusion Modes:
+- **Native Qdrant Fusion (`fusion_k=None`)**: When `fusion_k` is not specified or set to `None`, `qdrant-odm` executes native hybrid search inside the Qdrant DB engine using `Prefetch` and `FusionQuery(RRF)` in a single database RTT.
+- **Legacy Python Fusion (`fusion_k=int`)**: When `fusion_k` is specified as an integer (e.g., `60`), `qdrant-odm` executes dense and sparse searches separately and fuses them in Python memory using the specified `k` smoothing constant.
 
 ---
 

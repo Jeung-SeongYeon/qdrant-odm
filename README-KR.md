@@ -1,4 +1,4 @@
-# 📦 Qdrant ODM (v0.3.8)
+# 📦 Qdrant ODM (v0.3.9)
 
 [English](./README.md)
 
@@ -448,27 +448,60 @@ page = await repo.scroll()
 
 ---
 
-# 🔍 검색
+# 🔍 검색 & 쿼리
 
-## Dense
+`qdrant-odm`은 Dense 검색, Sparse 검색 및 Native Hybrid Search와 Prefetching을 포함한 Qdrant 통합 Query API를 지원합니다.
+
+## 통합 Query API
+
+Qdrant의 통합 `query_points` API를 활용하여 복잡한 검색을 수행하려면 repository의 `query()` 메서드를 사용합니다.
+
+```python
+from qdrant_client.http import models
+from qdrant_odm import Prefetch, SparseVectorInput
+
+# prefetch 및 서버측 Reciprocal Rank Fusion(RRF)을 적용한 하이브리드 검색 실행
+results = await repo.query(
+    query=models.FusionQuery(fusion=models.Fusion.RRF),
+    prefetch=[
+        Prefetch(query=[0.1, 0.2, 0.3], using="content_dense", limit=10),
+        Prefetch(query=SparseVectorInput(indices=[1], values=[1.0]), using="content_sparse", limit=10)
+    ],
+    limit=5
+)
+```
+
+## Prefetch Wrapper
+
+Qdrant Client의 모델을 직접 import할 필요 없이 `Prefetch` wrapper 클래스를 활용하여 후보군 검색을 정의할 수 있습니다. `Prefetch` wrapper는 아래 속성들을 지원합니다:
+- `query`: float 리스트(dense vector), `SparseVectorInput`, Qdrant Native Query 객체 또는 중첩된 `Prefetch` wrapper.
+- `using`: 대상 벡터 필드 이름.
+- `filter`: ODM `FilterExpression` (예: `Document.title == "test"`).
+- `limit`: 후보 검색 개수 제한.
+- `score_threshold`: 최소 유사도 점수 임계값.
+- `prefetch`: 중첩 prefetch 질의.
+
+## Dense 검색
 
 ```python
 await repo.search(SearchQuery(...))
 ```
 
-## Sparse
+## Sparse 검색
 
 ```python
 SparseVectorInput(indices=[...], values=[...])
 ```
 
-## Hybrid
+## Hybrid 검색
 
 ```python
 await repo.search_hybrid(HybridSearchQuery(...))
 ```
 
-(RRF 기반)
+### Fusion 모드 분기:
+- **Native Qdrant Fusion (`fusion_k=None`)**: `fusion_k`를 지정하지 않거나 `None`으로 설정한 경우, `Prefetch`와 `FusionQuery(RRF)`를 활용해 Qdrant DB 엔진 내부에서 RRF 병합을 수행합니다 (단일 네트워크 RTT로 처리).
+- **Legacy Python Fusion (`fusion_k=int`)**: `fusion_k`에 정수값(예: `60`)을 지정한 경우, Dense 검색과 Sparse 검색을 각각 개별적으로 요청한 뒤 로컬 Python 메모리 상에서 RRF 연산을 수행하여 정렬합니다.
 
 ---
 

@@ -1,4 +1,4 @@
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from qdrant_odm.model.base import QdrantModel
 
@@ -34,4 +34,4 @@ def model_from_point(cls: type[T], *, point_id: Any, payload: dict[str, Any] | N
     Returns:
         A validated model instance of type `cls`.
     """
-    return cls.from_point(point_id=point_id, payload=payload)
+    return cast(T, cls.from_point(point_id=point_id, payload=payload))

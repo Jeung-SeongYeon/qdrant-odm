@@ -1,5 +1,5 @@
 from datetime import datetime, date, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from qdrant_client.http import models
 
@@ -57,7 +57,7 @@ class FilterCompiler:
                 If the expression type or operator is not supported.
         """
         if isinstance(expr, LogicalExpr):
-            compiled_values = [cls._compile_expr(value, model=model) for value in expr.values]
+            compiled_values: list[Any] = [cls._compile_expr(value, model=model) for value in expr.values]
             if expr.operator == "and":
                 return models.Filter(must=compiled_values)
             if expr.operator == "or":

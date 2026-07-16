@@ -1,3 +1,4 @@
+from typing import Any, Union
 from pydantic import BaseModel, Field
 from qdrant_client.http import models
 
@@ -102,6 +103,60 @@ class HybridSearchQuery(BaseModel):
     with_payload: bool = True
     with_vectors: bool = False
     score_threshold: float | None = None
-    fusion_k: int = 60
+    fusion_k: int | None = None
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+class Prefetch(BaseModel):
+    """
+    ODM wrapper for Qdrant's Prefetch query.
+    """
+    query: Any | None = None
+    using: str | None = None
+    filter: FilterExpression | None = None
+    limit: int | None = None
+    score_threshold: float | None = None
+    prefetch: Union["Prefetch", list["Prefetch"], None] = None
+    params: Any | None = None
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def to_qdrant(self, model: Any | None = None) -> models.Prefetch:
+        """
+        Convert this Prefetch wrapper into a native Qdrant models.Prefetch instance.
+        """
+        from qdrant_odm.query.compiler import FilterCompiler
+
+        # Compile filter if present
+        compiled_filter = (
+            FilterCompiler.compile(self.filter, model=model)
+            if self.filter is not None
+            else None
+        )
+
+        # Resolve query type
+        raw_query = self.query
+        if isinstance(self.query, SparseVectorInput):
+            raw_query = self.query.to_qdrant()
+
+        # Resolve nested prefetch queries recursively
+        nested_prefetch: Any = None
+        if self.prefetch is not None:
+            if isinstance(self.prefetch, list):
+                nested_prefetch = [p.to_qdrant(model=model) for p in self.prefetch]
+            else:
+                nested_prefetch = self.prefetch.to_qdrant(model=model)
+
+        return models.Prefetch(
+            query=raw_query,
+            using=self.using,
+            filter=compiled_filter,
+            limit=self.limit,
+            score_threshold=self.score_threshold,
+            prefetch=nested_prefetch,
+            params=self.params,
+        )
+
+
+Prefetch.model_rebuild()
